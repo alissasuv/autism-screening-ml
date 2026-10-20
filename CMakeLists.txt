@@ -10,6 +10,7 @@ add_library(csv_reader
     src/csv_reader.cpp
     src/feature_type.cpp
     src/statistics.cpp
+    src/preprocessing.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)

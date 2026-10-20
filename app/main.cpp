@@ -1,11 +1,13 @@
 #include "csv_reader.hpp"
 #include "feature_type.hpp"
+#include "preprocessing.hpp"
 #include "statistics.hpp"
 
 #include <cstddef>
 #include <exception>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -64,6 +66,26 @@ int main() {
         std::cout << "\nTotal missing values: "
                   << total_missing << '\n';
 
+        // Calculate numeric statistics once, before preprocessing.
+        std::vector<std::optional<NumericStatistics>>
+            numeric_statistics(dataset.columns.size());
+
+        for (std::size_t i = 0;
+             i < dataset.columns.size(); ++i) {
+
+            if (types[i] != FeatureType::Numerical) {
+                continue;
+            }
+
+            const auto values =
+                extract_numeric_values(dataset.columns[i]);
+
+            if (!values.empty()) {
+                numeric_statistics[i] =
+                    calculate_numeric_statistics(values);
+            }
+        }
+
         while (true) {
             std::cout << "\nEnter feature index (q to quit): ";
 
@@ -104,16 +126,15 @@ int main() {
                       << missing << '\n';
 
             if (types[index] == FeatureType::Numerical) {
-                const auto values =
-                    extract_numeric_values(column);
-
-                if (values.empty()) {
-                    std::cout << "No numeric values.\n";
+                if (!numeric_statistics[index].has_value()) {
+                    std::cout << "No numeric statistics available.\n";
                     continue;
                 }
 
-                const auto stats =
-                    calculate_numeric_statistics(values);
+                const auto& stats = *numeric_statistics[index];
+
+                const auto values =
+                    extract_numeric_values(column);
 
                 std::cout << std::fixed
                           << std::setprecision(3);
@@ -137,6 +158,44 @@ int main() {
                     calculate_categorical_statistics(column);
 
                 print_categorical_histogram(stats);
+            }
+        }
+
+        std::cout << "\nPreprocess dataset? (y/N): ";
+
+        std::string answer;
+
+        if (std::getline(std::cin, answer) &&
+            (answer == "y" || answer == "Y")) {
+
+            const PreprocessingOptions options{
+                NumericImputation::Median,
+                NumericScaling::MinMax,
+                CategoryEncoding::OneHot
+            };
+
+            const auto matrix = preprocess_dataset(
+                dataset,
+                types,
+                numeric_statistics,
+                options
+            );
+
+            std::cout << "Preprocessing completed.\n";
+            std::cout << "Matrix rows: "
+                      << matrix.rows << '\n';
+            std::cout << "Matrix columns: "
+                      << matrix.cols << '\n';
+            std::cout << "Matrix values: "
+                      << matrix.values.size() << '\n';
+            std::cout << "Target values: "
+                      << matrix.target_values.size() << '\n';
+
+            std::cout << "\nOutput columns:\n";
+
+            for (std::size_t i = 0; i < matrix.cols; ++i) {
+                std::cout << i << ". "
+                          << matrix.column_names[i] << '\n';
             }
         }
 
