@@ -9,3 +9,5 @@ cmake-build-*/
 *.a
 *.dylib
 *.out
+
+data/*.bin

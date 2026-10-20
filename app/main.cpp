@@ -1,3 +1,4 @@
+#include "binary_io.hpp"
 #include "cli.hpp"
 #include "csv_reader.hpp"
 #include "feature_type.hpp"
@@ -6,10 +7,12 @@
 
 #include <cstddef>
 #include <exception>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -71,6 +74,7 @@ int main(int argc, char** argv) {
         std::cout << "\nTotal missing values: "
                   << total_missing << '\n';
 
+        // Calculate numeric statistics before preprocessing.
         std::vector<std::optional<NumericStatistics>>
             numeric_statistics(dataset.columns.size());
 
@@ -90,6 +94,7 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Interactive feature analysis.
         while (true) {
             std::cout << "\nEnter feature index (q to quit): ";
 
@@ -131,12 +136,14 @@ int main(int argc, char** argv) {
 
             if (types[index] == FeatureType::Numerical) {
                 if (!numeric_statistics[index].has_value()) {
-                    std::cout << "No numeric statistics available.\n";
+                    std::cout
+                        << "No numeric statistics available.\n";
                     continue;
                 }
 
                 const auto& stats = *numeric_statistics[index];
-                const auto values = extract_numeric_values(column);
+                const auto values =
+                    extract_numeric_values(column);
 
                 std::cout << std::fixed
                           << std::setprecision(3);
@@ -146,6 +153,7 @@ int main(int argc, char** argv) {
                 std::cout << "Mean: " << stats.mean << '\n';
                 std::cout << "Variance: "
                           << stats.variance << '\n';
+
                 std::cout << "Q05: " << stats.q05 << '\n';
                 std::cout << "Q25: " << stats.q25 << '\n';
                 std::cout << "Q50: " << stats.q50 << '\n';
@@ -153,7 +161,8 @@ int main(int argc, char** argv) {
                 std::cout << "Q95: " << stats.q95 << '\n';
 
                 print_numeric_histogram(
-                    values, config.histogram_bins
+                    values,
+                    config.histogram_bins
                 );
             } else {
                 const auto stats =
@@ -163,6 +172,7 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Optional preprocessing and binary saving.
         std::cout << "\nPreprocess dataset? (y/N): ";
 
         std::string answer;
@@ -194,9 +204,41 @@ int main(int argc, char** argv) {
                           << matrix.column_names[i] << '\n';
             }
 
-            std::cout << "\nConfigured output path: "
+            // Save the processed matrix to a binary file.
+            save_binary_matrix(matrix, config.output_path);
+
+            // Load it again to verify the saved data.
+            const auto restored =
+                load_binary_matrix(config.output_path);
+
+            if (restored.rows != matrix.rows ||
+                restored.cols != matrix.cols ||
+                restored.column_names != matrix.column_names ||
+                restored.target_values != matrix.target_values ||
+                restored.values != matrix.values) {
+
+                throw std::runtime_error(
+                    "Binary round-trip verification failed"
+                );
+            }
+
+            const auto csv_size =
+                std::filesystem::file_size(config.input_path);
+
+            const auto binary_size =
+                std::filesystem::file_size(config.output_path);
+
+            std::cout << "\nBinary file saved: "
                       << config.output_path << '\n';
-            std::cout << "Binary saving is not implemented yet.\n";
+
+            std::cout
+                << "Binary round-trip verification passed.\n";
+
+            std::cout << "\nFile sizes:\n";
+            std::cout << "CSV: "
+                      << csv_size << " bytes\n";
+            std::cout << "Binary: "
+                      << binary_size << " bytes\n";
         }
 
     } catch (const std::exception& error) {

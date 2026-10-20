@@ -22,6 +22,7 @@ add_library(csv_reader
     src/feature_type.cpp
     src/statistics.cpp
     src/preprocessing.cpp
+    src/binary_io.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
