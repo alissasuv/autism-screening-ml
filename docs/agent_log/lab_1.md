@@ -44,6 +44,93 @@ Keep everything else unchanged. Edit only README.md.
 
 **Result:** Qwen corrected the feature types and descriptions and changed the project overview to describe future implementation.
 
+## Prompt 3 — README Documentation Update
+
+**Tool:** OpenCode with Qwen3-4B-Instruct-2507, running locally via LM Studio.
+
+**Prompt:**
+
+```text
+Update README.md for my C++20 ML Lab 1 project.
+
+Keep the existing dataset description unchanged.
+Write everything in English.
+Do not read other source files. Do not modify any files except README.md.
+
+Add these sections:
+
+1. Build and Run
+- Requirements: C++20, CMake, Clang/GCC.
+- Build: cmake -S . -B build && cmake --build build
+- Run: ./build/autism_screening
+- Show how to use --help.
+
+2. CLI Options
+Document:
+--input (default data/Autism-Adult-Data.csv)
+--output (default data/processed.bin)
+--bins (default 10)
+--imputation: mean, median, zero (default median)
+--scaling: min-max, standard, robust (default min-max)
+--encoding: one-hot, ordinal (default one-hot)
+--help
+
+Include one example command with custom options.
+
+3. Data Processing
+- CSV loading with validation.
+- Missing values represented by std::optional.
+- Automatic feature type detection.
+- NumericColumn and CategoricalColumn stored using std::variant.
+- Statistics: min, max, mean, variance, Q05, Q25, Q50, Q75, Q95.
+- Interactive feature selection and text histograms.
+- Missing value imputation: mean/median/zero.
+- Scaling: MinMax/Standard/Robust.
+- Encoding: OneHot/Ordinal.
+- Class/ASD stored separately as target labels.
+- Output is a row-major matrix of doubles.
+
+4. Binary Format
+- Saves matrix dimensions, column names, double values and target labels.
+- File signature ASML, version 1, row-major layout.
+- Reloads the file and verifies equality.
+- Explain that one-hot encoding can make BIN larger than CSV.
+
+5. Testing
+- CTest: ctest --test-dir build --output-on-failure
+- Standalone tests: ./build/autism_tests
+- 10 test groups, including CSV errors, statistics, encoding,
+  all 18 preprocessing combinations and binary round-trip.
+
+6. Sanitizers
+- ASan and UBSan supported through ENABLE_SANITIZERS.
+- Commands:
+  cmake -S . -B build-sanitize -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
+  cmake --build build-sanitize
+  ctest --test-dir build-sanitize --output-on-failure
+
+7. Limitations
+- Age contains an outlier of 383.
+- Missing values in CSV use '?'.
+- Binary format is not guaranteed portable across architectures.
+- MinMax, Standard and Robust scaling return 0 when
+  the corresponding denominator is zero.
+
+Use clean Markdown headings and short explanations.
+Do not invent any other features.
+Do not create a commit.
+```
+
+**Result:** Qwen expanded `README.md` with build instructions, CLI options, data processing stages, binary serialization, automated testing, sanitizers, and known limitations.
+
+**Manual review:** Several issues were identified and corrected:
+
+1. The project overview was outdated and described future implementation instead of the existing data processing pipeline.
+2. The CLI example was reformatted and replaced with a command using previously tested parameters.
+3. The binary output description was clarified: the file is created after the user confirms preprocessing by entering `y`.
+
+**Conclusion:** The generated README required several manual corrections to accurately reflect the implemented functionality. The AI was used to update documentation only; no C++ source files were modified during this task.
+
 ## Verification and Conclusions
 
 The resulting README was reviewed manually. The feature names, missing-value counts, and feature type detection rule were checked for consistency with the dataset information.
