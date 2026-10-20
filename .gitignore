@@ -11,3 +11,5 @@ cmake-build-*/
 *.out
 
 data/*.bin
+
+build-sanitize/
