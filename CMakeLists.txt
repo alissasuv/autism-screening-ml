@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(csv_reader
     src/csv_reader.cpp
     src/feature_type.cpp
+    src/statistics.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
