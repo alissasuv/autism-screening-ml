@@ -1,6 +1,7 @@
 #include "binary_io.hpp"
 #include "cli.hpp"
 #include "csv_reader.hpp"
+#include "dataset.hpp"
 #include "feature_type.hpp"
 #include "preprocessing.hpp"
 #include "statistics.hpp"
@@ -14,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <vector>
 
 int main(int argc, char** argv) {
@@ -57,14 +59,16 @@ int main(int argc, char** argv) {
             total_missing += missing;
 
             const double missing_percent =
-                dataset.row_count == 0 ? 0.0 :
-                100.0 * missing / dataset.row_count;
+                dataset.row_count == 0
+                    ? 0.0
+                    : 100.0 * missing / dataset.row_count;
 
             std::cout << i << ". "
                       << dataset.column_names[i]
                       << " ("
                       << (type == FeatureType::Numerical
-                          ? "Numerical" : "Categorical")
+                              ? "Numerical"
+                              : "Categorical")
                       << ", missing: " << missing
                       << ", " << std::fixed
                       << std::setprecision(2)
@@ -74,7 +78,28 @@ int main(int argc, char** argv) {
         std::cout << "\nTotal missing values: "
                   << total_missing << '\n';
 
-        // Calculate numeric statistics before preprocessing.
+        // Convert raw string columns to typed columns.
+        const auto typed_dataset =
+            make_typed_dataset(dataset, types);
+
+        std::size_t numerical_count = 0;
+        std::size_t categorical_count = 0;
+
+        for (const auto& column : typed_dataset.columns) {
+            if (std::holds_alternative<NumericColumn>(column)) {
+                ++numerical_count;
+            } else {
+                ++categorical_count;
+            }
+        }
+
+        std::cout << "\nTyped dataset created successfully.\n";
+        std::cout << "Numerical columns: "
+                  << numerical_count << '\n';
+        std::cout << "Categorical columns: "
+                  << categorical_count << '\n';
+
+        // Calculate numerical statistics before preprocessing.
         std::vector<std::optional<NumericStatistics>>
             numeric_statistics(dataset.columns.size());
 
@@ -204,10 +229,10 @@ int main(int argc, char** argv) {
                           << matrix.column_names[i] << '\n';
             }
 
-            // Save the processed matrix to a binary file.
+            // Save processed data.
             save_binary_matrix(matrix, config.output_path);
 
-            // Load it again to verify the saved data.
+            // Read it back and verify that nothing changed.
             const auto restored =
                 load_binary_matrix(config.output_path);
 
