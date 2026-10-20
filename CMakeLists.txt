@@ -6,7 +6,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(csv_reader src/csv_reader.cpp)
+add_library(csv_reader
+    src/csv_reader.cpp
+    src/feature_type.cpp
+)
 
 target_include_directories(csv_reader PUBLIC include)
 target_compile_options(csv_reader PRIVATE -Wall -Wextra)

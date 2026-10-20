@@ -1,4 +1,5 @@
 #include "csv_reader.hpp"
+#include "feature_type.hpp"
 
 #include <exception>
 #include <iostream>
@@ -14,17 +15,27 @@ int main() {
         std::cout << "\nFeatures:\n";
 
         for (std::size_t i = 0; i < dataset.columns.size(); ++i) {
+            const auto& column = dataset.columns[i];
+
             std::size_t missing_count = 0;
 
-            for (const auto& value : dataset.columns[i]) {
+            for (const auto& value : column) {
                 if (!value.has_value()) {
                     ++missing_count;
                 }
             }
 
+            const FeatureType type = detect_feature_type(column);
+
+            const char* type_name =
+                type == FeatureType::Numerical
+                    ? "Numerical"
+                    : "Categorical";
+
             std::cout << i << ". "
                       << dataset.column_names[i]
-                      << " (missing: " << missing_count << ")\n";
+                      << " (" << type_name
+                      << ", missing: " << missing_count << ")\n";
         }
 
     } catch (const std::exception& error) {
