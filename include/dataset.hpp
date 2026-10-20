@@ -29,3 +29,7 @@ Dataset make_typed_dataset(
     const RawDataset& raw,
     const std::vector<FeatureType>& types
 );
+
+std::vector<double> extract_numeric_values(
+    const NumericColumn& column
+);

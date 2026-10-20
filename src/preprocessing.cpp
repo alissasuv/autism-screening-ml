@@ -1,37 +1,18 @@
 #include "preprocessing.hpp"
 
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
-#include <system_error>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
 
 constexpr const char* missing_category = "__MISSING__";
-
-double parse_number(const std::string& text) {
-    double number = 0.0;
-
-    const char* begin = text.data();
-    const char* end = begin + text.size();
-
-    auto [ptr, error] = std::from_chars(begin, end, number);
-
-    if (error != std::errc{} || ptr != end ||
-        !std::isfinite(number)) {
-        throw std::runtime_error(
-            "Invalid numeric value: " + text
-        );
-    }
-
-    return number;
-}
 
 double get_fill_value(
     NumericImputation strategy,
@@ -48,7 +29,9 @@ double get_fill_value(
             return 0.0;
     }
 
-    throw std::runtime_error("Unknown imputation strategy");
+    throw std::runtime_error(
+        "Unknown imputation strategy"
+    );
 }
 
 double scale_value(
@@ -76,7 +59,9 @@ double scale_value(
             break;
 
         default:
-            throw std::runtime_error("Unknown scaling strategy");
+            throw std::runtime_error(
+                "Unknown scaling strategy"
+            );
     }
 
     if (denominator == 0.0) {
@@ -87,7 +72,7 @@ double scale_value(
 }
 
 std::vector<double> process_numeric_column(
-    const std::vector<std::optional<std::string>>& column,
+    const NumericColumn& column,
     const NumericStatistics& stats,
     const PreprocessingOptions& options
 ) {
@@ -95,12 +80,11 @@ std::vector<double> process_numeric_column(
         get_fill_value(options.imputation, stats);
 
     std::vector<double> processed;
-    processed.reserve(column.size());
+    processed.reserve(column.values.size());
 
-    for (const auto& cell : column) {
-        const double value = cell.has_value()
-            ? parse_number(*cell)
-            : fill_value;
+    for (const auto& cell : column.values) {
+        const double value =
+            cell.has_value() ? *cell : fill_value;
 
         processed.push_back(
             scale_value(value, options.scaling, stats)
@@ -111,12 +95,12 @@ std::vector<double> process_numeric_column(
 }
 
 std::vector<std::string> get_categories(
-    const std::vector<std::optional<std::string>>& column
+    const CategoricalColumn& column
 ) {
     std::set<std::string> unique_categories;
     bool has_missing = false;
 
-    for (const auto& cell : column) {
+    for (const auto& cell : column.values) {
         if (cell.has_value()) {
             unique_categories.insert(*cell);
         } else {
@@ -146,19 +130,19 @@ std::vector<std::string> get_categories(
 std::string get_category_value(
     const std::optional<std::string>& cell
 ) {
-    return cell.has_value() ? *cell : missing_category;
+    return cell.has_value()
+        ? *cell
+        : missing_category;
 }
 
 } // namespace
 
 NumericMatrix preprocess_dataset(
-    const RawDataset& dataset,
-    const std::vector<FeatureType>& types,
+    const Dataset& dataset,
     const std::vector<std::optional<NumericStatistics>>& statistics,
     const PreprocessingOptions& options
 ) {
-    if (types.size() != dataset.columns.size() ||
-        statistics.size() != dataset.columns.size() ||
+    if (statistics.size() != dataset.columns.size() ||
         dataset.column_names.size() != dataset.columns.size()) {
         throw std::runtime_error(
             "Dataset metadata has inconsistent column counts"
@@ -174,17 +158,33 @@ NumericMatrix preprocess_dataset(
         const auto& column = dataset.columns[i];
         const auto& name = dataset.column_names[i];
 
-        if (column.size() != dataset.row_count) {
+        const auto column_size = std::visit(
+            [](const auto& typed_column) {
+                return typed_column.values.size();
+            },
+            column
+        );
+
+        if (column_size != dataset.row_count) {
             throw std::runtime_error(
                 "Inconsistent column length: " + name
             );
         }
 
-        // The target is stored separately from the input features.
+        // Keep the target separate from predictor features.
         if (name == "Class/ASD") {
-            matrix.target_values.reserve(column.size());
+            const auto* target =
+                std::get_if<CategoricalColumn>(&column);
 
-            for (const auto& cell : column) {
+            if (target == nullptr) {
+                throw std::runtime_error(
+                    "Target column must be categorical"
+                );
+            }
+
+            matrix.target_values.reserve(target->values.size());
+
+            for (const auto& cell : target->values) {
                 if (!cell.has_value()) {
                     throw std::runtime_error(
                         "Target column contains missing values"
@@ -197,7 +197,9 @@ NumericMatrix preprocess_dataset(
             continue;
         }
 
-        if (types[i] == FeatureType::Numerical) {
+        if (const auto* numeric =
+                std::get_if<NumericColumn>(&column)) {
+
             if (!statistics[i].has_value()) {
                 throw std::runtime_error(
                     "Missing numerical statistics for: " + name
@@ -206,7 +208,7 @@ NumericMatrix preprocess_dataset(
 
             output_columns.push_back(
                 process_numeric_column(
-                    column,
+                    *numeric,
                     *statistics[i],
                     options
                 )
@@ -216,18 +218,23 @@ NumericMatrix preprocess_dataset(
             continue;
         }
 
-        const auto categories = get_categories(column);
+        const auto& categorical =
+            std::get<CategoricalColumn>(column);
+
+        const auto categories = get_categories(categorical);
 
         if (options.encoding == CategoryEncoding::Ordinal) {
             std::vector<double> encoded;
-            encoded.reserve(column.size());
+            encoded.reserve(categorical.values.size());
 
-            for (const auto& cell : column) {
+            for (const auto& cell : categorical.values) {
                 const std::string value =
                     get_category_value(cell);
 
                 const auto it = std::find(
-                    categories.begin(), categories.end(), value
+                    categories.begin(),
+                    categories.end(),
+                    value
                 );
 
                 if (it == categories.end()) {
@@ -245,26 +252,39 @@ NumericMatrix preprocess_dataset(
 
             output_columns.push_back(std::move(encoded));
             output_names.push_back(name);
-        } else if (options.encoding == CategoryEncoding::OneHot) {
+
+        } else if (
+            options.encoding == CategoryEncoding::OneHot
+        ) {
             for (const auto& category : categories) {
                 std::vector<double> encoded;
-                encoded.reserve(column.size());
+                encoded.reserve(categorical.values.size());
 
-                for (const auto& cell : column) {
+                for (const auto& cell : categorical.values) {
                     encoded.push_back(
                         get_category_value(cell) == category
-                            ? 1.0 : 0.0
+                            ? 1.0
+                            : 0.0
                     );
                 }
 
                 output_columns.push_back(std::move(encoded));
-                output_names.push_back(name + "_" + category);
+                output_names.push_back(
+                    name + "_" + category
+                );
             }
+
         } else {
             throw std::runtime_error(
                 "Unknown category encoding strategy"
             );
         }
+    }
+
+    if (matrix.target_values.size() != dataset.row_count) {
+        throw std::runtime_error(
+            "Target column Class/ASD is missing"
+        );
     }
 
     matrix.rows = dataset.row_count;
@@ -273,7 +293,7 @@ NumericMatrix preprocess_dataset(
 
     matrix.values.reserve(matrix.rows * matrix.cols);
 
-    // Store the final matrix in row-major order.
+    // Convert column-oriented data to row-major matrix.
     for (std::size_t row = 0; row < matrix.rows; ++row) {
         for (std::size_t col = 0; col < matrix.cols; ++col) {
             matrix.values.push_back(output_columns[col][row]);

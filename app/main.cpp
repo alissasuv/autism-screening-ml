@@ -27,36 +27,58 @@ int main(int argc, char** argv) {
             return 0;
         }
 
-        const auto dataset = read_csv(config.input_path);
+        const auto raw_dataset = read_csv(config.input_path);
 
         std::cout << "Dataset loaded successfully\n";
-        std::cout << "Rows: " << dataset.row_count << '\n';
+        std::cout << "Rows: " << raw_dataset.row_count << '\n';
         std::cout << "Columns: "
-                  << dataset.column_names.size() << '\n';
+                  << raw_dataset.column_names.size() << '\n';
 
         std::vector<FeatureType> types;
-        types.reserve(dataset.columns.size());
+        types.reserve(raw_dataset.columns.size());
+
+        for (const auto& column : raw_dataset.columns) {
+            types.push_back(detect_feature_type(column));
+        }
+
+        // Convert raw strings into typed columns.
+        const Dataset dataset =
+            make_typed_dataset(raw_dataset, types);
 
         std::size_t total_missing = 0;
+        std::size_t numerical_count = 0;
+        std::size_t categorical_count = 0;
 
         std::cout << "\nFeatures:\n";
 
-        for (std::size_t i = 0;
-             i < dataset.columns.size(); ++i) {
-
+        for (std::size_t i = 0; i < dataset.columns.size(); ++i) {
             const auto& column = dataset.columns[i];
-            const auto type = detect_feature_type(column);
-            types.push_back(type);
 
-            std::size_t missing = 0;
+            const std::size_t missing = std::visit(
+                [](const auto& typed_column) {
+                    std::size_t count = 0;
 
-            for (const auto& cell : column) {
-                if (!cell.has_value()) {
-                    ++missing;
-                }
-            }
+                    for (const auto& cell : typed_column.values) {
+                        if (!cell.has_value()) {
+                            ++count;
+                        }
+                    }
+
+                    return count;
+                },
+                column
+            );
 
             total_missing += missing;
+
+            const bool is_numeric =
+                std::holds_alternative<NumericColumn>(column);
+
+            if (is_numeric) {
+                ++numerical_count;
+            } else {
+                ++categorical_count;
+            }
 
             const double missing_percent =
                 dataset.row_count == 0
@@ -66,9 +88,7 @@ int main(int argc, char** argv) {
             std::cout << i << ". "
                       << dataset.column_names[i]
                       << " ("
-                      << (type == FeatureType::Numerical
-                              ? "Numerical"
-                              : "Categorical")
+                      << (is_numeric ? "Numerical" : "Categorical")
                       << ", missing: " << missing
                       << ", " << std::fixed
                       << std::setprecision(2)
@@ -78,40 +98,25 @@ int main(int argc, char** argv) {
         std::cout << "\nTotal missing values: "
                   << total_missing << '\n';
 
-        // Convert raw string columns to typed columns.
-        const auto typed_dataset =
-            make_typed_dataset(dataset, types);
-
-        std::size_t numerical_count = 0;
-        std::size_t categorical_count = 0;
-
-        for (const auto& column : typed_dataset.columns) {
-            if (std::holds_alternative<NumericColumn>(column)) {
-                ++numerical_count;
-            } else {
-                ++categorical_count;
-            }
-        }
-
         std::cout << "\nTyped dataset created successfully.\n";
         std::cout << "Numerical columns: "
                   << numerical_count << '\n';
         std::cout << "Categorical columns: "
                   << categorical_count << '\n';
 
-        // Calculate numerical statistics before preprocessing.
+        // Calculate statistics before filling missing values.
         std::vector<std::optional<NumericStatistics>>
             numeric_statistics(dataset.columns.size());
 
-        for (std::size_t i = 0;
-             i < dataset.columns.size(); ++i) {
+        for (std::size_t i = 0; i < dataset.columns.size(); ++i) {
+            const auto* numeric =
+                std::get_if<NumericColumn>(&dataset.columns[i]);
 
-            if (types[i] != FeatureType::Numerical) {
+            if (numeric == nullptr) {
                 continue;
             }
 
-            const auto values =
-                extract_numeric_values(dataset.columns[i]);
+            const auto values = extract_numeric_values(*numeric);
 
             if (!values.empty()) {
                 numeric_statistics[i] =
@@ -119,7 +124,7 @@ int main(int argc, char** argv) {
             }
         }
 
-        // Interactive feature analysis.
+        // Interactive statistics and histograms.
         while (true) {
             std::cout << "\nEnter feature index (q to quit): ";
 
@@ -134,7 +139,7 @@ int main(int argc, char** argv) {
             }
 
             std::istringstream stream(input);
-            std::size_t index;
+            std::size_t index = 0;
             std::string extra;
 
             if (!(stream >> index) ||
@@ -146,20 +151,29 @@ int main(int argc, char** argv) {
 
             const auto& column = dataset.columns[index];
 
-            std::size_t missing = 0;
+            const std::size_t missing = std::visit(
+                [](const auto& typed_column) {
+                    std::size_t count = 0;
 
-            for (const auto& cell : column) {
-                if (!cell.has_value()) {
-                    ++missing;
-                }
-            }
+                    for (const auto& cell : typed_column.values) {
+                        if (!cell.has_value()) {
+                            ++count;
+                        }
+                    }
+
+                    return count;
+                },
+                column
+            );
 
             std::cout << "\nFeature: "
                       << dataset.column_names[index]
                       << "\nMissing values: "
                       << missing << '\n';
 
-            if (types[index] == FeatureType::Numerical) {
+            if (const auto* numeric =
+                    std::get_if<NumericColumn>(&column)) {
+
                 if (!numeric_statistics[index].has_value()) {
                     std::cout
                         << "No numeric statistics available.\n";
@@ -167,8 +181,7 @@ int main(int argc, char** argv) {
                 }
 
                 const auto& stats = *numeric_statistics[index];
-                const auto values =
-                    extract_numeric_values(column);
+                const auto values = extract_numeric_values(*numeric);
 
                 std::cout << std::fixed
                           << std::setprecision(3);
@@ -189,15 +202,20 @@ int main(int argc, char** argv) {
                     values,
                     config.histogram_bins
                 );
+
             } else {
+                const auto& categorical =
+                    std::get<CategoricalColumn>(column);
+
                 const auto stats =
-                    calculate_categorical_statistics(column);
+                    calculate_categorical_statistics(
+                        categorical.values
+                    );
 
                 print_categorical_histogram(stats);
             }
         }
 
-        // Optional preprocessing and binary saving.
         std::cout << "\nPreprocess dataset? (y/N): ";
 
         std::string answer;
@@ -207,7 +225,6 @@ int main(int argc, char** argv) {
 
             const auto matrix = preprocess_dataset(
                 dataset,
-                types,
                 numeric_statistics,
                 config.preprocessing
             );
@@ -232,7 +249,7 @@ int main(int argc, char** argv) {
             // Save processed data.
             save_binary_matrix(matrix, config.output_path);
 
-            // Read it back and verify that nothing changed.
+            // Read the file and verify all data.
             const auto restored =
                 load_binary_matrix(config.output_path);
 

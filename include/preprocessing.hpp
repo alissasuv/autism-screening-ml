@@ -1,7 +1,6 @@
 #pragma once
 
-#include "csv_reader.hpp"
-#include "feature_type.hpp"
+#include "dataset.hpp"
 #include "statistics.hpp"
 
 #include <cstddef>
@@ -42,8 +41,7 @@ struct NumericMatrix {
 };
 
 NumericMatrix preprocess_dataset(
-    const RawDataset& dataset,
-    const std::vector<FeatureType>& types,
+    const Dataset& dataset,
     const std::vector<std::optional<NumericStatistics>>& statistics,
     const PreprocessingOptions& options
 );

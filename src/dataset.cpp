@@ -6,6 +6,7 @@
 #include <string>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -81,4 +82,19 @@ Dataset make_typed_dataset(
     }
 
     return dataset;
+}
+
+std::vector<double> extract_numeric_values(
+    const NumericColumn& column
+) {
+    std::vector<double> values;
+    values.reserve(column.values.size());
+
+    for (const auto& cell : column.values) {
+        if (cell.has_value()) {
+            values.push_back(*cell);
+        }
+    }
+
+    return values;
 }
