@@ -1,3 +1,4 @@
+#include "cli.hpp"
 #include "csv_reader.hpp"
 #include "feature_type.hpp"
 #include "preprocessing.hpp"
@@ -12,12 +13,16 @@
 #include <string>
 #include <vector>
 
-int main() {
+int main(int argc, char** argv) {
     try {
-        const auto dataset =
-            read_csv("data/Autism-Adult-Data.csv");
+        const CliOptions config = parse_cli(argc, argv);
 
-        constexpr std::size_t histogram_bins = 10;
+        if (config.show_help) {
+            std::cout << config.help_text;
+            return 0;
+        }
+
+        const auto dataset = read_csv(config.input_path);
 
         std::cout << "Dataset loaded successfully\n";
         std::cout << "Rows: " << dataset.row_count << '\n';
@@ -66,7 +71,6 @@ int main() {
         std::cout << "\nTotal missing values: "
                   << total_missing << '\n';
 
-        // Calculate numeric statistics once, before preprocessing.
         std::vector<std::optional<NumericStatistics>>
             numeric_statistics(dataset.columns.size());
 
@@ -132,9 +136,7 @@ int main() {
                 }
 
                 const auto& stats = *numeric_statistics[index];
-
-                const auto values =
-                    extract_numeric_values(column);
+                const auto values = extract_numeric_values(column);
 
                 std::cout << std::fixed
                           << std::setprecision(3);
@@ -151,7 +153,7 @@ int main() {
                 std::cout << "Q95: " << stats.q95 << '\n';
 
                 print_numeric_histogram(
-                    values, histogram_bins
+                    values, config.histogram_bins
                 );
             } else {
                 const auto stats =
@@ -168,17 +170,11 @@ int main() {
         if (std::getline(std::cin, answer) &&
             (answer == "y" || answer == "Y")) {
 
-            const PreprocessingOptions options{
-                NumericImputation::Median,
-                NumericScaling::MinMax,
-                CategoryEncoding::OneHot
-            };
-
             const auto matrix = preprocess_dataset(
                 dataset,
                 types,
                 numeric_statistics,
-                options
+                config.preprocessing
             );
 
             std::cout << "Preprocessing completed.\n";
@@ -197,6 +193,10 @@ int main() {
                 std::cout << i << ". "
                           << matrix.column_names[i] << '\n';
             }
+
+            std::cout << "\nConfigured output path: "
+                      << config.output_path << '\n';
+            std::cout << "Binary saving is not implemented yet.\n";
         }
 
     } catch (const std::exception& error) {
