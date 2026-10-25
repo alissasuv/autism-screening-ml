@@ -235,6 +235,15 @@ void test_feature_type() {
         detect_feature_type(categorical) == FeatureType::Categorical,
         "Categorical column classified incorrectly"
     );
+    const std::vector<Cell> equivalent_numbers = {
+        "1", "1.0", "1.00", "2", "2.0"
+    };
+
+    check(
+        detect_feature_type(equivalent_numbers) ==
+            FeatureType::Categorical,
+        "Equivalent numeric values were counted separately"
+    );
 }
 
 void test_typed_dataset() {

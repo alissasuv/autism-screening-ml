@@ -1,25 +1,32 @@
 #include "feature_type.hpp"
 
 #include <charconv>
+#include <cmath>
+#include <optional>
+#include <set>
 #include <string>
 #include <system_error>
-#include <unordered_set>
+#include <vector>
 
 namespace {
 
-bool is_number(const std::string& value) {
-    if (value.empty()) {
+bool parse_number(
+    const std::string& text,
+    double& result
+) {
+    if (text.empty()) {
         return false;
     }
 
-    double number = 0.0;
+    const char* begin = text.data();
+    const char* end = begin + text.size();
 
-    const char* begin = value.data();
-    const char* end = begin + value.size();
+    const auto [ptr, error] =
+        std::from_chars(begin, end, result);
 
-    auto [ptr, error] = std::from_chars(begin, end, number);
-
-    return error == std::errc{} && ptr == end;
+    return error == std::errc{} &&
+           ptr == end &&
+           std::isfinite(result);
 }
 
 } // namespace
@@ -27,21 +34,33 @@ bool is_number(const std::string& value) {
 FeatureType detect_feature_type(
     const std::vector<std::optional<std::string>>& values
 ) {
-    std::unordered_set<std::string> unique_values;
+    std::set<double> unique_numbers;
+    bool has_values = false;
 
-    for (const auto& value : values) {
-        if (!value.has_value()) {
+    for (const auto& cell : values) {
+        if (!cell.has_value()) {
             continue;
         }
 
-        if (!is_number(*value)) {
+        has_values = true;
+
+        double number = 0.0;
+
+        // Any non-numeric value makes the column categorical.
+        if (!parse_number(*cell, number)) {
             return FeatureType::Categorical;
         }
 
-        unique_values.insert(*value);
+        unique_numbers.insert(number);
     }
 
-    if (unique_values.size() <= 2) {
+    // A completely missing column cannot be treated as numeric.
+    if (!has_values) {
+        return FeatureType::Categorical;
+    }
+
+    // Binary and constant numerical columns are categorical.
+    if (unique_numbers.size() <= 2) {
         return FeatureType::Categorical;
     }
 
