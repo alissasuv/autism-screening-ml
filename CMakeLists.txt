@@ -24,6 +24,7 @@ add_library(csv_reader
     src/preprocessing.cpp
     src/binary_io.cpp
     src/dataset.cpp
+    src/decision_stump.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
