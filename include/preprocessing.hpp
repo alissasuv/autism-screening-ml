@@ -70,3 +70,7 @@ NumericMatrix preprocess_dataset(
     const std::vector<std::optional<NumericStatistics>>& statistics,
     const PreprocessingOptions& options
 );
+
+std::vector<double> encode_target(
+    const std::vector<std::string>& target_values
+);

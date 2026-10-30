@@ -302,3 +302,24 @@ NumericMatrix preprocess_dataset(
 
     return matrix;
 }
+
+std::vector<double> encode_target(
+    const std::vector<std::string>& target_values
+) {
+    std::vector<double> encoded;
+    encoded.reserve(target_values.size());
+
+    for (const auto& value : target_values) {
+        if (value == "NO") {
+            encoded.push_back(0.0);
+        } else if (value == "YES") {
+            encoded.push_back(1.0);
+        } else {
+            throw std::invalid_argument(
+                "Unknown target value: " + value
+            );
+        }
+    }
+
+    return encoded;
+}
