@@ -9,7 +9,6 @@
 #include <vector>
 #include <span>
 #include <stdexcept>
-#include <string>
 
 enum class NumericImputation {
     Mean,
@@ -48,7 +47,6 @@ PreprocessingState fit_preprocessing(
     const Dataset& train,
     const PreprocessingOptions& options
 );
-
 
 struct NumericMatrix {
     std::size_t rows = 0;
@@ -89,4 +87,9 @@ NumericMatrix preprocess_dataset(
 
 std::vector<double> encode_target(
     const std::vector<std::string>& target_values
+);
+
+NumericMatrix transform_preprocessing(
+    const Dataset& dataset,
+    const PreprocessingState& state
 );

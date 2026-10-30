@@ -393,3 +393,170 @@ PreprocessingState fit_preprocessing(
 
     return state;
 }
+
+NumericMatrix transform_preprocessing(
+    const Dataset& dataset,
+    const PreprocessingState& state
+) {
+    if (dataset.columns.size() != state.column_names.size() ||
+        dataset.column_names != state.column_names ||
+        state.numeric_statistics.size() != dataset.columns.size() ||
+        state.categories.size() != dataset.columns.size()) {
+        throw std::invalid_argument(
+            "Dataset does not match preprocessing state"
+        );
+    }
+
+    NumericMatrix matrix;
+
+    std::vector<std::vector<double>> output_columns;
+    std::vector<std::string> output_names;
+
+    for (std::size_t i = 0; i < dataset.columns.size(); ++i) {
+        const auto& column = dataset.columns[i];
+        const auto& name = dataset.column_names[i];
+
+        const std::size_t column_size = std::visit(
+            [](const auto& typed_column) {
+                return typed_column.values.size();
+            },
+            column
+        );
+
+        if (column_size != dataset.row_count) {
+            throw std::invalid_argument(
+                "Inconsistent column length: " + name
+            );
+        }
+
+        if (name == "Class/ASD") {
+            const auto* target =
+                std::get_if<CategoricalColumn>(&column);
+
+            if (target == nullptr) {
+                throw std::invalid_argument(
+                    "Target column must be categorical"
+                );
+            }
+
+            for (const auto& cell : target->values) {
+                if (!cell.has_value()) {
+                    throw std::invalid_argument(
+                        "Target contains missing values"
+                    );
+                }
+
+                matrix.target_values.push_back(*cell);
+            }
+
+            continue;
+        }
+
+        if (const auto* numeric =
+                std::get_if<NumericColumn>(&column)) {
+
+            if (!state.numeric_statistics[i].has_value()) {
+                throw std::invalid_argument(
+                    "Missing training statistics for: " + name
+                );
+            }
+
+            output_columns.push_back(
+                process_numeric_column(
+                    *numeric,
+                    *state.numeric_statistics[i],
+                    state.options
+                )
+            );
+
+            output_names.push_back(name);
+            continue;
+        }
+
+        const auto* categorical =
+            std::get_if<CategoricalColumn>(&column);
+
+        if (categorical == nullptr) {
+            throw std::invalid_argument(
+                "Unexpected column type: " + name
+            );
+        }
+
+        const auto& categories = state.categories[i];
+
+        if (state.options.encoding == CategoryEncoding::Ordinal) {
+            std::vector<double> encoded;
+            encoded.reserve(dataset.row_count);
+
+            for (const auto& cell : categorical->values) {
+                const std::string value =
+                    get_category_value(cell);
+
+                const auto it = std::find(
+                    categories.begin(),
+                    categories.end(),
+                    value
+                );
+
+                if (it == categories.end()) {
+                    throw std::invalid_argument(
+                        "Unknown category: " + value
+                    );
+                }
+
+                encoded.push_back(
+                    static_cast<double>(
+                        std::distance(categories.begin(), it)
+                    )
+                );
+            }
+
+            output_columns.push_back(std::move(encoded));
+            output_names.push_back(name);
+
+        } else if (
+            state.options.encoding == CategoryEncoding::OneHot
+        ) {
+            for (const auto& category : categories) {
+                std::vector<double> encoded;
+                encoded.reserve(dataset.row_count);
+
+                for (const auto& cell : categorical->values) {
+                    encoded.push_back(
+                        get_category_value(cell) == category
+                            ? 1.0
+                            : 0.0
+                    );
+                }
+
+                output_columns.push_back(std::move(encoded));
+                output_names.push_back(name + "_" + category);
+            }
+
+        } else {
+            throw std::invalid_argument(
+                "Unknown category encoding strategy"
+            );
+        }
+    }
+
+    if (matrix.target_values.size() != dataset.row_count) {
+        throw std::invalid_argument(
+            "Target column Class/ASD is missing"
+        );
+    }
+
+    matrix.rows = dataset.row_count;
+    matrix.cols = output_columns.size();
+    matrix.column_names = std::move(output_names);
+
+    matrix.values.reserve(matrix.rows * matrix.cols);
+
+    for (std::size_t row = 0; row < matrix.rows; ++row) {
+        for (std::size_t col = 0; col < matrix.cols; ++col) {
+            matrix.values.push_back(output_columns[col][row]);
+        }
+    }
+
+    return matrix;
+}
