@@ -67,6 +67,21 @@ add_test(
     NAME autism_pipeline_tests
     COMMAND autism_tests
 )
+add_executable(decision_stump_tests
+    tests/test_decision_stump.cpp
+)
+
+target_link_libraries(decision_stump_tests PRIVATE csv_reader)
+
+target_compile_options(decision_stump_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+add_test(
+    NAME decision_stump_tests
+    COMMAND decision_stump_tests
+)
 
 option(ENABLE_SANITIZERS
     "Enable AddressSanitizer and UndefinedBehaviorSanitizer"
@@ -75,7 +90,7 @@ option(ENABLE_SANITIZERS
 
 if(ENABLE_SANITIZERS)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-        foreach(target csv_reader autism_screening autism_tests)
+        foreach(target csv_reader autism_screening autism_tests decision_stump_tests)
             target_compile_options(${target} PRIVATE
                 -fsanitize=address,undefined
                 -fno-omit-frame-pointer
