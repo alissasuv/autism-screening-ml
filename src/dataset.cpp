@@ -7,6 +7,11 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+#include <algorithm>
+#include <numeric>
+#include <random>
+#include <variant>
+#include <type_traits>
 
 namespace {
 
@@ -97,4 +102,106 @@ std::vector<double> extract_numeric_values(
     }
 
     return values;
+}
+
+DatasetSplit split_dataset(
+    const Dataset& dataset,
+    double train_ratio,
+    unsigned int seed
+) {
+    if (!std::isfinite(train_ratio) ||
+        train_ratio <= 0.0 ||
+        train_ratio >= 1.0) {
+        throw std::invalid_argument(
+            "Train ratio must be between 0 and 1"
+        );
+    }
+
+    if (dataset.row_count < 2) {
+        throw std::invalid_argument(
+            "Dataset must contain at least two rows"
+        );
+    }
+
+    if (dataset.columns.size() != dataset.column_names.size()) {
+        throw std::invalid_argument(
+            "Inconsistent dataset metadata"
+        );
+    }
+
+    for (const auto& column : dataset.columns) {
+        const std::size_t size = std::visit(
+            [](const auto& typed_column) {
+                return typed_column.values.size();
+            },
+            column
+        );
+
+        if (size != dataset.row_count) {
+            throw std::invalid_argument(
+                "Inconsistent dataset column length"
+            );
+        }
+    }
+
+    const std::size_t train_size =
+        static_cast<std::size_t>(dataset.row_count * train_ratio);
+
+    if (train_size == 0 || train_size == dataset.row_count) {
+        throw std::invalid_argument(
+            "Train ratio produces an empty subset"
+        );
+    }
+
+    std::vector<std::size_t> indices(dataset.row_count);
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::mt19937 generator(seed);
+    std::shuffle(indices.begin(), indices.end(), generator);
+
+    DatasetSplit result;
+
+    result.train.column_names = dataset.column_names;
+    result.test.column_names = dataset.column_names;
+
+    result.train.row_count = train_size;
+    result.test.row_count = dataset.row_count - train_size;
+
+    result.train.columns.reserve(dataset.columns.size());
+    result.test.columns.reserve(dataset.columns.size());
+
+    for (const auto& column : dataset.columns) {
+        std::visit(
+            [&](const auto& source) {
+                using ColumnType = std::decay_t<decltype(source)>;
+
+                ColumnType train_column;
+                ColumnType test_column;
+
+                train_column.values.reserve(result.train.row_count);
+                test_column.values.reserve(result.test.row_count);
+
+                for (std::size_t i = 0; i < indices.size(); ++i) {
+                    const auto& value = source.values[indices[i]];
+
+                    if (i < train_size) {
+                        train_column.values.push_back(value);
+                    } else {
+                        test_column.values.push_back(value);
+                    }
+                }
+
+                result.train.columns.emplace_back(
+                    std::move(train_column)
+                );
+
+                result.test.columns.emplace_back(
+                    std::move(test_column)
+                );
+            },
+            column
+        );
+    }
+
+    return result;
 }

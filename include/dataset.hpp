@@ -25,6 +25,17 @@ struct Dataset {
     std::size_t row_count = 0;
 };
 
+struct DatasetSplit {
+    Dataset train;
+    Dataset test;
+};
+
+DatasetSplit split_dataset(
+    const Dataset& dataset,
+    double train_ratio = 0.8,
+    unsigned int seed = 42
+);
+
 Dataset make_typed_dataset(
     const RawDataset& raw,
     const std::vector<FeatureType>& types
