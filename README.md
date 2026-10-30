@@ -113,3 +113,14 @@ will be used in subsequent machine learning laboratory works.
 - Missing values in CSV use '?'.
 - Binary format is not guaranteed portable across architectures.
 - MinMax, Standard and Robust scaling return 0 when the corresponding denominator is zero.
+
+
+## Lab 2 — Decision Stump
+
+This laboratory implements a depth-one decision tree for regression and classification using the common `IModel` interface. The model selects the best feature and threshold using variance-based splitting for regression and Gini impurity for classification.
+
+The naive threshold search has a time complexity of O(d × n²). The optimized implementation reduces it to O(d × n log n) with O(n) auxiliary memory by sorting object indices once per feature and updating the splitting criterion in O(1) for each candidate threshold.
+
+The implementation was verified against a naive reference algorithm and passed CTest, including Debug tests with AddressSanitizer and UndefinedBehaviorSanitizer.
+
+On the Autism Screening Adult dataset, the model selected the `result` feature with a threshold of 0.65 after MinMax scaling. Both regression and classification produced the same split.

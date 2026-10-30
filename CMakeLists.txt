@@ -24,6 +24,7 @@ add_library(csv_reader
     src/preprocessing.cpp
     src/binary_io.cpp
     src/dataset.cpp
+    src/decision_stump.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
@@ -48,6 +49,17 @@ target_compile_options(autism_screening PRIVATE
     -Wextra
 )
 
+add_executable(autism_model_demo
+    app/model_demo.cpp
+)
+
+target_link_libraries(autism_model_demo PRIVATE csv_reader)
+
+target_compile_options(autism_model_demo PRIVATE
+    -Wall
+    -Wextra
+)
+
 # Automated tests
 enable_testing()
 
@@ -66,6 +78,21 @@ add_test(
     NAME autism_pipeline_tests
     COMMAND autism_tests
 )
+add_executable(decision_stump_tests
+    tests/test_decision_stump.cpp
+)
+
+target_link_libraries(decision_stump_tests PRIVATE csv_reader)
+
+target_compile_options(decision_stump_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+add_test(
+    NAME decision_stump_tests
+    COMMAND decision_stump_tests
+)
 
 option(ENABLE_SANITIZERS
     "Enable AddressSanitizer and UndefinedBehaviorSanitizer"
@@ -74,7 +101,7 @@ option(ENABLE_SANITIZERS
 
 if(ENABLE_SANITIZERS)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-        foreach(target csv_reader autism_screening autism_tests)
+        foreach(target csv_reader autism_screening autism_tests decision_stump_tests autism_model_demo)
             target_compile_options(${target} PRIVATE
                 -fsanitize=address,undefined
                 -fno-omit-frame-pointer
