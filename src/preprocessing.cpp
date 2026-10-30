@@ -323,3 +323,73 @@ std::vector<double> encode_target(
 
     return encoded;
 }
+
+PreprocessingState fit_preprocessing(
+    const Dataset& train,
+    const PreprocessingOptions& options
+) {
+    if (train.row_count == 0) {
+        throw std::invalid_argument(
+            "Training dataset must not be empty"
+        );
+    }
+
+    if (train.columns.size() != train.column_names.size()) {
+        throw std::invalid_argument(
+            "Inconsistent training dataset metadata"
+        );
+    }
+
+    PreprocessingState state;
+    state.options = options;
+    state.column_names = train.column_names;
+
+    state.numeric_statistics.resize(train.columns.size());
+    state.categories.resize(train.columns.size());
+
+    for (std::size_t i = 0; i < train.columns.size(); ++i) {
+        const auto& column = train.columns[i];
+
+        const std::size_t column_size = std::visit(
+            [](const auto& typed_column) {
+                return typed_column.values.size();
+            },
+            column
+        );
+
+        if (column_size != train.row_count) {
+            throw std::invalid_argument(
+                "Inconsistent column length: " +
+                train.column_names[i]
+            );
+        }
+
+        if (train.column_names[i] == "Class/ASD") {
+            continue;
+        }
+
+        if (const auto* numeric =
+                std::get_if<NumericColumn>(&column)) {
+
+            const auto values = extract_numeric_values(*numeric);
+
+            if (values.empty()) {
+                throw std::invalid_argument(
+                    "Numeric column has no valid values: " +
+                    train.column_names[i]
+                );
+            }
+
+            state.numeric_statistics[i] =
+                calculate_numeric_statistics(values);
+
+        } else {
+            const auto& categorical =
+                std::get<CategoricalColumn>(column);
+
+            state.categories[i] = get_categories(categorical);
+        }
+    }
+
+    return state;
+}

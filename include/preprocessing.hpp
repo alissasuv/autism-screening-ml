@@ -34,6 +34,22 @@ struct PreprocessingOptions {
     CategoryEncoding encoding = CategoryEncoding::OneHot;
 };
 
+struct PreprocessingState {
+    PreprocessingOptions options;
+
+    std::vector<std::optional<NumericStatistics>> numeric_statistics;
+
+    std::vector<std::vector<std::string>> categories;
+
+    std::vector<std::string> column_names;
+};
+
+PreprocessingState fit_preprocessing(
+    const Dataset& train,
+    const PreprocessingOptions& options
+);
+
+
 struct NumericMatrix {
     std::size_t rows = 0;
     std::size_t cols = 0;
