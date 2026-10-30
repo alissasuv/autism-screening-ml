@@ -7,6 +7,9 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <span>
+#include <stdexcept>
+#include <string>
 
 enum class NumericImputation {
     Mean,
@@ -38,6 +41,28 @@ struct NumericMatrix {
     std::vector<std::string> column_names;
     std::vector<double> values;
     std::vector<std::string> target_values;
+
+    std::span<double> operator[](std::size_t row) {
+        return {values.data() + row * cols, cols};
+    }
+
+    std::span<const double> operator[](std::size_t row) const {
+        return {values.data() + row * cols, cols};
+    }
+
+    std::span<double> at(std::size_t row) {
+        if (row >= rows) {
+            throw std::out_of_range("Matrix row index out of range");
+        }
+        return (*this)[row];
+    }
+
+    std::span<const double> at(std::size_t row) const {
+        if (row >= rows) {
+            throw std::out_of_range("Matrix row index out of range");
+        }
+        return (*this)[row];
+    }
 };
 
 NumericMatrix preprocess_dataset(
