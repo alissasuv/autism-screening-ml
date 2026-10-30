@@ -13,3 +13,5 @@ cmake-build-*/
 data/*.bin
 
 build-sanitize/
+
+build-debug/

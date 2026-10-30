@@ -131,6 +131,17 @@ Do not create a commit.
 
 **Conclusion:** The generated README required several manual corrections to accurately reflect the implemented functionality. The AI was used to update documentation only; no C++ source files were modified during this task.
 
+## Prompt 4 — README Lab 2
+
+```text
+Append a concise English section titled "Lab 2 — Decision Stump" to README.md. Preserve existing content.
+
+Describe a depth-one decision tree for regression (variance) and classification (Gini). Explain naive O(d*n²) vs optimized O(d*n log n), O(n) memory, sorting indices once per feature and O(1) criterion updates. Mention CTest and sanitizer tests passed, and that the Autism Screening Adult dataset produced a split on "result" at 0.65 after scaling.
+
+Do not inspect source code, modify other files, invent results or commit changes.
+```
+
+
 ## Verification and Conclusions
 
 The resulting README was reviewed manually. The feature names, missing-value counts, and feature type detection rule were checked for consistency with the dataset information.
