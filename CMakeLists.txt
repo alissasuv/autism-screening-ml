@@ -49,6 +49,17 @@ target_compile_options(autism_screening PRIVATE
     -Wextra
 )
 
+add_executable(autism_model_demo
+    app/model_demo.cpp
+)
+
+target_link_libraries(autism_model_demo PRIVATE csv_reader)
+
+target_compile_options(autism_model_demo PRIVATE
+    -Wall
+    -Wextra
+)
+
 # Automated tests
 enable_testing()
 
@@ -90,7 +101,7 @@ option(ENABLE_SANITIZERS
 
 if(ENABLE_SANITIZERS)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-        foreach(target csv_reader autism_screening autism_tests decision_stump_tests)
+        foreach(target csv_reader autism_screening autism_tests decision_stump_tests autism_model_demo)
             target_compile_options(${target} PRIVATE
                 -fsanitize=address,undefined
                 -fno-omit-frame-pointer
