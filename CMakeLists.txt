@@ -170,3 +170,31 @@ if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         -fsanitize=address,undefined
     )
 endif()
+
+add_executable(cart_tests
+    tests/test_cart.cpp
+)
+
+target_link_libraries(cart_tests PRIVATE csv_reader)
+
+target_compile_options(cart_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(cart_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(cart_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME cart_tests
+    COMMAND cart_tests
+)

@@ -124,3 +124,125 @@ The naive threshold search has a time complexity of O(d × n²). The optimized i
 The implementation was verified against a naive reference algorithm and passed CTest, including Debug tests with AddressSanitizer and UndefinedBehaviorSanitizer.
 
 On the Autism Screening Adult dataset, the model selected the `result` feature with a threshold of 0.65 after MinMax scaling. Both regression and classification produced the same split.
+
+## Lab 3 — CART Decision Tree (Star Track)
+
+This laboratory implements CART decision trees for regression and
+classification. It extends the decision stump from Lab 2 by
+recursively applying the shared `SplitFinder` to subsets of
+training objects.
+
+### Architecture
+
+- `MatrixSlice<T>` provides non-owning row and column views with
+  a pointer, size, stride, and slice direction.
+- `NumericMatrix` supports RowMajor and ColumnMajor storage.
+- `IRegressor` and `IClassifier` extend the common `IModel`
+  interface; classifiers also implement `predict_proba()` and
+  `classes()`.
+- `SplitFinder` searches for the best numerical threshold and
+  supports subsets of objects and candidate features.
+- `CartTree` implements the shared recursive training and
+  prediction logic.
+- `CartRegressor` and `CartClassifier` provide task-specific
+  model interfaces.
+
+Each tree owns its root through `std::unique_ptr`. Internal nodes
+own two children; leaf nodes store a prediction and, for
+classification, class probabilities. Recursion passes object
+indices without copying the original feature matrix.
+
+Matrix slices do not own their elements and must not outlive the
+matrix. A contiguous slice can be converted to `std::span`.
+Non-contiguous slices remain accessible through their stride,
+but conversion to `std::span` throws an exception.
+
+### Training and Prediction
+
+CART supports three main hyperparameters:
+
+- `max_depth`: maximum tree depth, with the root at depth 0.
+- `min_samples_split`: minimum objects required to attempt a split.
+- `min_samples_leaf`: minimum objects in each resulting leaf.
+
+Training stops when a stopping condition is reached, all targets
+are identical, or no valid split exists. The split search uses
+the regression variance criterion or the classification Gini
+criterion. Equal split scores are resolved deterministically by
+feature index and threshold.
+
+Regression leaves return the mean target value. Classification
+leaves predict the most frequent class and store class proportions
+in the order returned by `classes()`. Class ties are resolved in
+favour of the smallest numerical label.
+
+Successful repeated calls to `fit()` replace the previous trained
+state. Invalid training data is rejected before the new tree
+replaces the old one.
+
+### Complexity
+
+At a node containing `s` objects and `d` candidate features,
+split search costs `O(d * s * log(s))`, including sorting.
+Total training complexity is the sum over all internal nodes.
+
+Prediction requires `O(depth)` comparisons per object.
+The implementation does not construct a new feature matrix for
+each recursive node.
+
+### Demonstration
+
+Build and run:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/cart_demo
+```
+
+The Autism Screening Adult classification demonstration uses
+563 training objects, 141 test objects, and 113 processed features.
+
+With `max_depth=1`, the resulting tree has three nodes and
+two leaves. It splits on `result <= 0.65` after scaling.
+
+With `max_depth=4`, the actual depth remains 1 because the
+same split already separates the training classes.
+
+The independent synthetic regression example grows to depth 2,
+with seven nodes and four leaves. It demonstrates recursive
+partitioning beyond a decision stump.
+
+### Testing
+
+Run all registered tests:
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+The test suite covers the preprocessing pipeline, the decision
+stump, matrix slices, and CART regression and classification.
+
+Debug sanitizers can be enabled with:
+
+```bash
+cmake -S . -B build-sanitize \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DENABLE_SANITIZERS=ON
+cmake --build build-sanitize
+ctest --test-dir build-sanitize --output-on-failure
+```
+
+### Limitations
+
+- Only binary splits on numerical feature columns are supported.
+- Pruning and categorical subset splits are not implemented.
+- Leaf probabilities are class frequencies, not calibrated
+  confidence estimates.
+- Floating-point split comparisons have finite precision.
+- Class labels are encoded as numbers for the model interface;
+  the original `Class/ASD` values remain available in the
+  dataset's target labels.
+- RowMajor and ColumnMajor offer equivalent logical access,
+  but have different memory access patterns.
