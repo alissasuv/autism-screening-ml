@@ -26,6 +26,7 @@ add_library(csv_reader
     src/dataset.cpp
     src/decision_stump.cpp
     src/split_finder.cpp
+    src/cart.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
@@ -146,3 +147,26 @@ add_test(
     NAME matrix_slice_tests
     COMMAND matrix_slice_tests
 )
+
+add_executable(cart_demo
+    app/cart_demo.cpp
+)
+
+target_link_libraries(cart_demo PRIVATE csv_reader)
+
+target_compile_options(cart_demo PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(cart_demo PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(cart_demo PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
