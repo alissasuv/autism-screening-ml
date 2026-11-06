@@ -18,3 +18,19 @@ public:
         const NumericMatrix& features
     ) const = 0;
 };
+
+class IRegressor : public IModel {
+public:
+    ~IRegressor() override = default;
+};
+
+class IClassifier : public IModel {
+public:
+    ~IClassifier() override = default;
+
+    virtual NumericMatrix predict_proba(
+        const NumericMatrix& features
+    ) const = 0;
+
+    virtual std::span<const double> classes() const = 0;
+};
