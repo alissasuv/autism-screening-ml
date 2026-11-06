@@ -1,15 +1,11 @@
 #pragma once
 
 #include "model.hpp"
+#include "split_finder.hpp"
 
 #include <cstddef>
 #include <span>
 #include <vector>
-
-enum class SplitCriterion {
-    Variance,
-    Gini
-};
 
 class DecisionStump : public IModel {
 public:
@@ -37,6 +33,8 @@ public:
 private:
     SplitCriterion criterion_;
     std::size_t min_samples_leaf_;
+
+    SplitFinder split_finder_;
 
     bool fitted_ = false;
     bool has_split_ = false;

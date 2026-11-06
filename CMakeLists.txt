@@ -25,6 +25,8 @@ add_library(csv_reader
     src/binary_io.cpp
     src/dataset.cpp
     src/decision_stump.cpp
+    src/split_finder.cpp
+    src/cart.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
@@ -118,3 +120,81 @@ if(ENABLE_SANITIZERS)
         )
     endif()
 endif()
+
+add_executable(matrix_slice_tests
+    tests/test_matrix_slice.cpp
+)
+
+target_link_libraries(matrix_slice_tests PRIVATE csv_reader)
+
+target_compile_options(matrix_slice_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(matrix_slice_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+    target_link_options(matrix_slice_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME matrix_slice_tests
+    COMMAND matrix_slice_tests
+)
+
+add_executable(cart_demo
+    app/cart_demo.cpp
+)
+
+target_link_libraries(cart_demo PRIVATE csv_reader)
+
+target_compile_options(cart_demo PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(cart_demo PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(cart_demo PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_executable(cart_tests
+    tests/test_cart.cpp
+)
+
+target_link_libraries(cart_tests PRIVATE csv_reader)
+
+target_compile_options(cart_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(cart_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(cart_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME cart_tests
+    COMMAND cart_tests
+)
