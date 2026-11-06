@@ -118,3 +118,30 @@ if(ENABLE_SANITIZERS)
         )
     endif()
 endif()
+
+add_executable(matrix_slice_tests
+    tests/test_matrix_slice.cpp
+)
+
+target_link_libraries(matrix_slice_tests PRIVATE csv_reader)
+
+target_compile_options(matrix_slice_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(matrix_slice_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+    target_link_options(matrix_slice_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME matrix_slice_tests
+    COMMAND matrix_slice_tests
+)

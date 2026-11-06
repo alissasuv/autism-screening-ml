@@ -560,3 +560,113 @@ NumericMatrix transform_preprocessing(
 
     return matrix;
 }
+
+double& NumericMatrix::operator()(
+    std::size_t row, std::size_t col
+) & {
+    const std::size_t index =
+        layout == MatrixLayout::RowMajor
+            ? row * cols + col
+            : col * rows + row;
+
+    return values[index];
+}
+
+const double& NumericMatrix::operator()(
+    std::size_t row, std::size_t col
+) const & {
+    const std::size_t index =
+        layout == MatrixLayout::RowMajor
+            ? row * cols + col
+            : col * rows + row;
+
+    return values[index];
+}
+
+MatrixSlice<double> NumericMatrix::operator()(
+    std::size_t row, std::nullopt_t
+) & {
+    if (row >= rows) {
+        throw std::out_of_range("Matrix row index out of range");
+    }
+
+    if (cols == 0) {
+        return {nullptr, 0, 1, SliceAxis::Row};
+    }
+
+    const std::size_t offset =
+        layout == MatrixLayout::RowMajor
+            ? row * cols : row;
+
+    const std::size_t step =
+        layout == MatrixLayout::RowMajor
+            ? 1 : rows;
+
+    return {values.data() + offset, cols, step, SliceAxis::Row};
+}
+
+MatrixSlice<const double> NumericMatrix::operator()(
+    std::size_t row, std::nullopt_t
+) const & {
+    if (row >= rows) {
+        throw std::out_of_range("Matrix row index out of range");
+    }
+
+    if (cols == 0) {
+        return {nullptr, 0, 1, SliceAxis::Row};
+    }
+
+    const std::size_t offset =
+        layout == MatrixLayout::RowMajor
+            ? row * cols : row;
+
+    const std::size_t step =
+        layout == MatrixLayout::RowMajor
+            ? 1 : rows;
+
+    return {values.data() + offset, cols, step, SliceAxis::Row};
+}
+
+MatrixSlice<double> NumericMatrix::operator()(
+    std::nullopt_t, std::size_t col
+) & {
+    if (col >= cols) {
+        throw std::out_of_range("Matrix column index out of range");
+    }
+
+    if (rows == 0) {
+        return {nullptr, 0, 1, SliceAxis::Column};
+    }
+
+    const std::size_t offset =
+        layout == MatrixLayout::RowMajor
+            ? col : col * rows;
+
+    const std::size_t step =
+        layout == MatrixLayout::RowMajor
+            ? cols : 1;
+
+    return {values.data() + offset, rows, step, SliceAxis::Column};
+}
+
+MatrixSlice<const double> NumericMatrix::operator()(
+    std::nullopt_t, std::size_t col
+) const & {
+    if (col >= cols) {
+        throw std::out_of_range("Matrix column index out of range");
+    }
+
+    if (rows == 0) {
+        return {nullptr, 0, 1, SliceAxis::Column};
+    }
+
+    const std::size_t offset =
+        layout == MatrixLayout::RowMajor
+            ? col : col * rows;
+
+    const std::size_t step =
+        layout == MatrixLayout::RowMajor
+            ? cols : 1;
+
+    return {values.data() + offset, rows, step, SliceAxis::Column};
+}
