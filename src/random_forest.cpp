@@ -1,4 +1,5 @@
 #include "random_forest.hpp"
+#include "forest_parallel.hpp"
 #include "ml_exceptions.hpp"
 
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <random>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -113,7 +115,58 @@ std::uint32_t next_unique_seed(
     return candidate;
 }
 
+struct TreeSeeds {
+    std::uint32_t sample;
+    std::uint32_t feature;
+};
+
+std::vector<TreeSeeds> make_tree_seeds(
+    const RandomForestParameters& parameters
+) {
+    std::mt19937 master(parameters.random_state);
+    std::unordered_set<std::uint32_t> used;
+
+    std::vector<TreeSeeds> seeds;
+    seeds.reserve(parameters.n_estimators);
+
+    for (std::size_t i = 0;
+         i < parameters.n_estimators;
+         ++i) {
+        seeds.push_back({
+            next_unique_seed(master, used),
+            next_unique_seed(master, used)
+        });
+    }
+
+    return seeds;
+}
+
+std::vector<std::size_t> bootstrap_counts(
+    std::size_t rows,
+    std::size_t draws,
+    std::uint32_t seed
+) {
+    std::mt19937 rng(seed);
+
+    std::uniform_int_distribution<std::size_t> distribution(
+        0,
+        rows - 1
+    );
+
+    std::vector<std::size_t> counts(rows, 0);
+
+    for (std::size_t i = 0; i < draws; ++i) {
+        ++counts[distribution(rng)];
+    }
+
+    return counts;
+}
+
 } // namespace
+
+// ============================================================
+// Random Forest Regressor
+// ============================================================
 
 RandomForestRegressor::RandomForestRegressor(
     RandomForestParameters parameters
@@ -128,65 +181,47 @@ void RandomForestRegressor::fit(
 ) {
     validate_training(features, target, parameters_);
 
-    // Restart the forest RNG for every fit.
-    std::mt19937 master(parameters_.random_state);
-
-    std::unordered_set<std::uint32_t> used_seeds;
-
-    std::vector<std::unique_ptr<CartRegressor>> trained;
-    trained.reserve(parameters_.n_estimators);
+    const auto seeds = make_tree_seeds(parameters_);
 
     const std::size_t draws =
         parameters_.max_samples.value_or(features.rows);
 
-    for (std::size_t tree_id = 0;
-         tree_id < parameters_.n_estimators;
-         ++tree_id) {
+    // Each worker writes only to its own indexed slot.
+    std::vector<std::unique_ptr<CartRegressor>> trained(
+        parameters_.n_estimators
+    );
 
-        const auto sample_seed =
-            next_unique_seed(master, used_seeds);
-
-        const auto feature_seed =
-            next_unique_seed(master, used_seeds);
-
-        auto tree = std::make_unique<CartRegressor>(
-            parameters_.tree,
-            parameters_.max_features,
-            feature_seed
-        );
-
-        if (parameters_.bootstrap) {
-            std::mt19937 sample_rng(sample_seed);
-
-            std::uniform_int_distribution<std::size_t> row_dist(
-                0,
-                features.rows - 1
+    forest_parallel::for_each_index(
+        parameters_.n_estimators,
+        parameters_.n_jobs,
+        [&](std::size_t i) {
+            auto tree = std::make_unique<CartRegressor>(
+                parameters_.tree,
+                parameters_.max_features,
+                seeds[i].feature
             );
 
-            std::vector<std::size_t> counts(
-                features.rows,
-                0
-            );
+            if (parameters_.bootstrap) {
+                const auto counts = bootstrap_counts(
+                    features.rows,
+                    draws,
+                    seeds[i].sample
+                );
 
-            for (std::size_t draw = 0;
-                 draw < draws;
-                 ++draw) {
-                ++counts[row_dist(sample_rng)];
+                tree->fit_with_counts(
+                    features,
+                    target,
+                    counts
+                );
+            } else {
+                tree->fit(features, target);
             }
 
-            tree->fit_with_counts(
-                features,
-                target,
-                counts
-            );
-        } else {
-            tree->fit(features, target);
+            trained[i] = std::move(tree);
         }
+    );
 
-        trained.push_back(std::move(tree));
-    }
-
-    // Failed refits preserve the previous trained forest.
+    // The previous forest survives a failed refit.
     trees_.swap(trained);
 }
 
@@ -199,14 +234,27 @@ std::vector<double> RandomForestRegressor::predict(
         );
     }
 
+    // Parallel tasks write separate prediction vectors.
+    std::vector<std::vector<double>> tree_predictions(
+        trees_.size()
+    );
+
+    forest_parallel::for_each_index(
+        trees_.size(),
+        parameters_.n_jobs,
+        [&](std::size_t i) {
+            tree_predictions[i] =
+                trees_[i]->predict(features);
+        }
+    );
+
+    // Accumulate strictly in tree-index order.
     std::vector<long double> sums(
         features.rows,
         0.0L
     );
 
-    for (const auto& tree : trees_) {
-        const auto prediction = tree->predict(features);
-
+    for (const auto& prediction : tree_predictions) {
         for (std::size_t row = 0;
              row < prediction.size();
              ++row) {
@@ -220,7 +268,6 @@ std::vector<double> RandomForestRegressor::predict(
     for (std::size_t row = 0;
          row < features.rows;
          ++row) {
-
         const long double average =
             sums[row] / trees_.size();
 
@@ -278,6 +325,10 @@ RandomForestRegressor::tree_depths() const {
     return result;
 }
 
+// ============================================================
+// Random Forest Classifier
+// ============================================================
+
 RandomForestParameters classifier_default_parameters() {
     RandomForestParameters parameters;
     parameters.max_features = {FeatureMode::Sqrt, 1};
@@ -297,7 +348,7 @@ void RandomForestClassifier::fit(
 ) {
     validate_training(features, target, parameters_);
 
-    // The forest class vocabulary comes from the full target.
+    // Classes are determined from the full training set.
     std::vector<double> new_classes(
         target.begin(),
         target.end()
@@ -313,64 +364,46 @@ void RandomForestClassifier::fit(
         new_classes.end()
     );
 
-    std::mt19937 master(parameters_.random_state);
-
-    std::unordered_set<std::uint32_t> used_seeds;
-
-    std::vector<std::unique_ptr<CartClassifier>> trained;
-    trained.reserve(parameters_.n_estimators);
+    const auto seeds = make_tree_seeds(parameters_);
 
     const std::size_t draws =
         parameters_.max_samples.value_or(features.rows);
 
-    for (std::size_t tree_id = 0;
-         tree_id < parameters_.n_estimators;
-         ++tree_id) {
+    std::vector<std::unique_ptr<CartClassifier>> trained(
+        parameters_.n_estimators
+    );
 
-        const auto sample_seed =
-            next_unique_seed(master, used_seeds);
-
-        const auto feature_seed =
-            next_unique_seed(master, used_seeds);
-
-        auto tree = std::make_unique<CartClassifier>(
-            parameters_.tree,
-            parameters_.max_features,
-            feature_seed
-        );
-
-        if (parameters_.bootstrap) {
-            std::mt19937 sample_rng(sample_seed);
-
-            std::uniform_int_distribution<std::size_t> row_dist(
-                0,
-                features.rows - 1
+    forest_parallel::for_each_index(
+        parameters_.n_estimators,
+        parameters_.n_jobs,
+        [&](std::size_t i) {
+            auto tree = std::make_unique<CartClassifier>(
+                parameters_.tree,
+                parameters_.max_features,
+                seeds[i].feature
             );
 
-            std::vector<std::size_t> counts(
-                features.rows,
-                0
-            );
+            if (parameters_.bootstrap) {
+                const auto counts = bootstrap_counts(
+                    features.rows,
+                    draws,
+                    seeds[i].sample
+                );
 
-            for (std::size_t draw = 0;
-                 draw < draws;
-                 ++draw) {
-                ++counts[row_dist(sample_rng)];
+                tree->fit_with_counts(
+                    features,
+                    target,
+                    counts
+                );
+            } else {
+                tree->fit(features, target);
             }
 
-            tree->fit_with_counts(
-                features,
-                target,
-                counts
-            );
-        } else {
-            tree->fit(features, target);
+            trained[i] = std::move(tree);
         }
+    );
 
-        trained.push_back(std::move(tree));
-    }
-
-    // Replace trained state only after all trees succeed.
+    // Commit the newly trained state only after success.
     trees_.swap(trained);
     classes_.swap(new_classes);
 }
@@ -385,7 +418,6 @@ NumericMatrix RandomForestClassifier::predict_proba(
     }
 
     NumericMatrix output;
-
     output.rows = features.rows;
     output.cols = classes_.size();
     output.layout = MatrixLayout::RowMajor;
@@ -399,21 +431,38 @@ NumericMatrix RandomForestClassifier::predict_proba(
         );
     }
 
+    // Compute each tree's probabilities independently.
+    std::vector<NumericMatrix> tree_probabilities(
+        trees_.size()
+    );
+
+    forest_parallel::for_each_index(
+        trees_.size(),
+        parameters_.n_jobs,
+        [&](std::size_t i) {
+            tree_probabilities[i] =
+                trees_[i]->predict_proba(features);
+        }
+    );
+
+    // Combine results in deterministic tree-index order.
     std::vector<long double> sums(
         output.rows * output.cols,
         0.0L
     );
 
-    for (const auto& tree : trees_) {
-        const auto probabilities =
-            tree->predict_proba(features);
+    for (std::size_t tree_id = 0;
+         tree_id < trees_.size();
+         ++tree_id) {
+        const auto& probabilities =
+            tree_probabilities[tree_id];
 
-        const auto tree_classes = tree->classes();
+        const auto tree_classes =
+            trees_[tree_id]->classes();
 
         for (std::size_t local_class = 0;
              local_class < tree_classes.size();
              ++local_class) {
-
             const auto it = std::lower_bound(
                 classes_.begin(),
                 classes_.end(),
@@ -435,10 +484,11 @@ NumericMatrix RandomForestClassifier::predict_proba(
             for (std::size_t row = 0;
                  row < features.rows;
                  ++row) {
-                sums[row * output.cols + global_class] +=
-                    static_cast<long double>(
-                        probabilities(row, local_class)
-                    );
+                sums[
+                    row * output.cols + global_class
+                ] += static_cast<long double>(
+                    probabilities(row, local_class)
+                );
             }
         }
     }
@@ -476,7 +526,6 @@ std::vector<double> RandomForestClassifier::predict(
     for (std::size_t row = 0;
          row < features.rows;
          ++row) {
-
         std::size_t winner = 0;
 
         for (std::size_t col = 1;
@@ -543,12 +592,6 @@ RandomForestClassifier::tree_depths() const {
 
     return result;
 }
-
-
-
-
-
-
 
 
 

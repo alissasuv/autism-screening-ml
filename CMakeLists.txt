@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+find_package(Threads REQUIRED)
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -31,6 +33,8 @@ add_library(csv_reader
 )
 
 target_include_directories(csv_reader PUBLIC include)
+
+target_link_libraries(csv_reader PUBLIC Threads::Threads)
 
 target_compile_options(csv_reader PRIVATE
     -Wall
@@ -326,4 +330,35 @@ endif()
 add_test(
     NAME random_forest_classification_tests
     COMMAND random_forest_classification_tests
+)
+
+add_executable(forest_parallel_tests
+    tests/test_forest_parallel.cpp
+)
+
+target_link_libraries(
+    forest_parallel_tests
+    PRIVATE csv_reader
+)
+
+target_compile_options(forest_parallel_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(forest_parallel_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(forest_parallel_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME forest_parallel_tests
+    COMMAND forest_parallel_tests
 )
