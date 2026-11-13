@@ -198,3 +198,33 @@ add_test(
     NAME cart_tests
     COMMAND cart_tests
 )
+
+
+# Lab 4
+add_executable(split_finder_tests
+    tests/test_split_finder.cpp
+)
+
+target_link_libraries(split_finder_tests PRIVATE csv_reader)
+
+target_compile_options(split_finder_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(split_finder_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(split_finder_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME split_finder_tests
+    COMMAND split_finder_tests
+)
