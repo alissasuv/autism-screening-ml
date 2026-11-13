@@ -278,6 +278,271 @@ RandomForestRegressor::tree_depths() const {
     return result;
 }
 
+RandomForestParameters classifier_default_parameters() {
+    RandomForestParameters parameters;
+    parameters.max_features = {FeatureMode::Sqrt, 1};
+    return parameters;
+}
+
+RandomForestClassifier::RandomForestClassifier(
+    RandomForestParameters parameters
+)
+    : parameters_(parameters) {
+    validate_parameters(parameters_);
+}
+
+void RandomForestClassifier::fit(
+    const NumericMatrix& features,
+    std::span<const double> target
+) {
+    validate_training(features, target, parameters_);
+
+    // The forest class vocabulary comes from the full target.
+    std::vector<double> new_classes(
+        target.begin(),
+        target.end()
+    );
+
+    std::sort(new_classes.begin(), new_classes.end());
+
+    new_classes.erase(
+        std::unique(
+            new_classes.begin(),
+            new_classes.end()
+        ),
+        new_classes.end()
+    );
+
+    std::mt19937 master(parameters_.random_state);
+
+    std::unordered_set<std::uint32_t> used_seeds;
+
+    std::vector<std::unique_ptr<CartClassifier>> trained;
+    trained.reserve(parameters_.n_estimators);
+
+    const std::size_t draws =
+        parameters_.max_samples.value_or(features.rows);
+
+    for (std::size_t tree_id = 0;
+         tree_id < parameters_.n_estimators;
+         ++tree_id) {
+
+        const auto sample_seed =
+            next_unique_seed(master, used_seeds);
+
+        const auto feature_seed =
+            next_unique_seed(master, used_seeds);
+
+        auto tree = std::make_unique<CartClassifier>(
+            parameters_.tree,
+            parameters_.max_features,
+            feature_seed
+        );
+
+        if (parameters_.bootstrap) {
+            std::mt19937 sample_rng(sample_seed);
+
+            std::uniform_int_distribution<std::size_t> row_dist(
+                0,
+                features.rows - 1
+            );
+
+            std::vector<std::size_t> counts(
+                features.rows,
+                0
+            );
+
+            for (std::size_t draw = 0;
+                 draw < draws;
+                 ++draw) {
+                ++counts[row_dist(sample_rng)];
+            }
+
+            tree->fit_with_counts(
+                features,
+                target,
+                counts
+            );
+        } else {
+            tree->fit(features, target);
+        }
+
+        trained.push_back(std::move(tree));
+    }
+
+    // Replace trained state only after all trees succeed.
+    trees_.swap(trained);
+    classes_.swap(new_classes);
+}
+
+NumericMatrix RandomForestClassifier::predict_proba(
+    const NumericMatrix& features
+) const {
+    if (trees_.empty()) {
+        throw InvalidModelStateError(
+            "Random Forest has not been fitted"
+        );
+    }
+
+    NumericMatrix output;
+
+    output.rows = features.rows;
+    output.cols = classes_.size();
+    output.layout = MatrixLayout::RowMajor;
+
+    if (output.cols != 0 &&
+        output.rows >
+            std::numeric_limits<std::size_t>::max() /
+                output.cols) {
+        throw DimensionMismatchError(
+            "Probability matrix size overflow"
+        );
+    }
+
+    std::vector<long double> sums(
+        output.rows * output.cols,
+        0.0L
+    );
+
+    for (const auto& tree : trees_) {
+        const auto probabilities =
+            tree->predict_proba(features);
+
+        const auto tree_classes = tree->classes();
+
+        for (std::size_t local_class = 0;
+             local_class < tree_classes.size();
+             ++local_class) {
+
+            const auto it = std::lower_bound(
+                classes_.begin(),
+                classes_.end(),
+                tree_classes[local_class]
+            );
+
+            if (it == classes_.end() ||
+                *it != tree_classes[local_class]) {
+                throw InvalidModelStateError(
+                    "Tree class not found in forest classes"
+                );
+            }
+
+            const auto global_class =
+                static_cast<std::size_t>(
+                    it - classes_.begin()
+                );
+
+            for (std::size_t row = 0;
+                 row < features.rows;
+                 ++row) {
+                sums[row * output.cols + global_class] +=
+                    static_cast<long double>(
+                        probabilities(row, local_class)
+                    );
+            }
+        }
+    }
+
+    output.values.reserve(sums.size());
+
+    for (const auto sum : sums) {
+        const long double average =
+            sum / trees_.size();
+
+        if (!std::isfinite(average) ||
+            average < 0.0L ||
+            average > 1.0L) {
+            throw InvalidModelStateError(
+                "Invalid forest class probability"
+            );
+        }
+
+        output.values.push_back(
+            static_cast<double>(average)
+        );
+    }
+
+    return output;
+}
+
+std::vector<double> RandomForestClassifier::predict(
+    const NumericMatrix& features
+) const {
+    const auto probabilities = predict_proba(features);
+
+    std::vector<double> result;
+    result.reserve(features.rows);
+
+    for (std::size_t row = 0;
+         row < features.rows;
+         ++row) {
+
+        std::size_t winner = 0;
+
+        for (std::size_t col = 1;
+             col < classes_.size();
+             ++col) {
+            if (probabilities(row, col) >
+                probabilities(row, winner)) {
+                winner = col;
+            }
+        }
+
+        result.push_back(classes_[winner]);
+    }
+
+    return result;
+}
+
+std::span<const double> RandomForestClassifier::classes() const {
+    if (trees_.empty()) {
+        throw InvalidModelStateError(
+            "Random Forest has not been fitted"
+        );
+    }
+
+    return classes_;
+}
+
+std::size_t RandomForestClassifier::tree_count() const noexcept {
+    return trees_.size();
+}
+
+std::vector<std::size_t>
+RandomForestClassifier::tree_node_counts() const {
+    if (trees_.empty()) {
+        throw InvalidModelStateError(
+            "Random Forest has not been fitted"
+        );
+    }
+
+    std::vector<std::size_t> result;
+    result.reserve(trees_.size());
+
+    for (const auto& tree : trees_) {
+        result.push_back(tree->node_count());
+    }
+
+    return result;
+}
+
+std::vector<std::size_t>
+RandomForestClassifier::tree_depths() const {
+    if (trees_.empty()) {
+        throw InvalidModelStateError(
+            "Random Forest has not been fitted"
+        );
+    }
+
+    std::vector<std::size_t> result;
+    result.reserve(trees_.size());
+
+    for (const auto& tree : trees_) {
+        result.push_back(tree->depth());
+    }
+
+    return result;
+}
 
 
 

@@ -54,6 +54,43 @@ private:
     std::vector<std::unique_ptr<CartRegressor>> trees_;
 };
 
+// Classifier defaults to sqrt(d) candidate features per CART node.
+RandomForestParameters classifier_default_parameters();
+
+class RandomForestClassifier final : public IClassifier {
+public:
+    explicit RandomForestClassifier(
+        RandomForestParameters parameters = classifier_default_parameters()
+    );
+
+    void fit(
+        const NumericMatrix& features,
+        std::span<const double> target
+    ) override;
+
+    std::vector<double> predict(
+        const NumericMatrix& features
+    ) const override;
+
+    NumericMatrix predict_proba(
+        const NumericMatrix& features
+    ) const override;
+
+    std::span<const double> classes() const override;
+
+    std::size_t tree_count() const noexcept;
+
+    std::vector<std::size_t> tree_node_counts() const;
+
+    std::vector<std::size_t> tree_depths() const;
+
+private:
+    RandomForestParameters parameters_;
+
+    std::vector<std::unique_ptr<CartClassifier>> trees_;
+
+    std::vector<double> classes_;
+};
 
 
 

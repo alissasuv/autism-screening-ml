@@ -293,3 +293,37 @@ add_test(
     NAME random_forest_regression_tests
     COMMAND random_forest_regression_tests
 )
+
+add_executable(random_forest_classification_tests
+    tests/test_random_forest_classification.cpp
+)
+
+target_link_libraries(
+    random_forest_classification_tests
+    PRIVATE csv_reader
+)
+
+target_compile_options(
+    random_forest_classification_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(
+        random_forest_classification_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(
+        random_forest_classification_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME random_forest_classification_tests
+    COMMAND random_forest_classification_tests
+)
