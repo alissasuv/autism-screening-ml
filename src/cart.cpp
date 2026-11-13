@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <map>
 #include <numeric>
 #include <utility>
 
@@ -22,11 +21,14 @@ struct CartTree::Node {
 
 CartTree::CartTree(
     SplitCriterion criterion,
-    CartParameters parameters
+    CartParameters parameters,
+    FeatureSearchParams feature_search,
+    std::uint32_t random_state
 )
     : criterion_(criterion),
-      parameters_(parameters)
-{
+      parameters_(parameters),
+      feature_search_(feature_search),
+      random_state_(random_state) {
     if (parameters_.min_samples_split < 2) {
         throw InvalidModelParameterError(
             "min_samples_split must be at least 2"
@@ -36,6 +38,13 @@ CartTree::CartTree(
     if (parameters_.min_samples_leaf == 0) {
         throw InvalidModelParameterError(
             "min_samples_leaf must be positive"
+        );
+    }
+
+    if (feature_search_.mode == FeatureMode::Count &&
+        feature_search_.count == 0) {
+        throw InvalidModelParameterError(
+            "Feature count must be positive"
         );
     }
 }
@@ -48,9 +57,10 @@ std::unique_ptr<CartTree::Node> CartTree::build(
     const NumericMatrix& features,
     std::span<const double> target,
     std::span<const std::size_t> object_ids,
-    std::span<const std::size_t> feature_ids,
+    std::span<const std::size_t> counts,
     std::size_t current_depth,
     std::span<const double> classes,
+    std::mt19937& rng,
     std::size_t& nodes,
     std::size_t& leaves,
     std::size_t& deepest
@@ -60,14 +70,27 @@ std::unique_ptr<CartTree::Node> CartTree::build(
     ++nodes;
     deepest = std::max(deepest, current_depth);
 
+    const auto weight_of = [&](std::size_t id) -> std::size_t {
+        return counts.empty() ? 1 : counts[id];
+    };
+
+    long double total_weight = 0.0L;
+
+    for (const auto id : object_ids) {
+        total_weight +=
+            static_cast<long double>(weight_of(id));
+    }
+
     if (criterion_ == SplitCriterion::Variance) {
         long double sum = 0.0L;
 
         for (const auto id : object_ids) {
-            sum += static_cast<long double>(target[id]);
+            sum +=
+                static_cast<long double>(weight_of(id)) *
+                target[id];
         }
 
-        const long double average = sum / object_ids.size();
+        const long double average = sum / total_weight;
 
         if (!std::isfinite(average) ||
             std::abs(average) >
@@ -79,7 +102,10 @@ std::unique_ptr<CartTree::Node> CartTree::build(
 
         node->prediction = static_cast<double>(average);
     } else {
-        std::vector<std::size_t> counts(classes.size(), 0);
+        std::vector<long double> class_weights(
+            classes.size(),
+            0.0L
+        );
 
         for (const auto id : object_ids) {
             const auto it = std::lower_bound(
@@ -88,25 +114,28 @@ std::unique_ptr<CartTree::Node> CartTree::build(
                 target[id]
             );
 
-            const auto category =
-                static_cast<std::size_t>(
-                    it - classes.begin()
-                );
+            const auto index = static_cast<std::size_t>(
+                it - classes.begin()
+            );
 
-            ++counts[category];
+            class_weights[index] +=
+                static_cast<long double>(weight_of(id));
         }
-
-        node->probabilities.reserve(classes.size());
 
         std::size_t winner = 0;
 
-        for (std::size_t i = 0; i < counts.size(); ++i) {
+        node->probabilities.reserve(classes.size());
+
+        for (std::size_t i = 0;
+             i < class_weights.size();
+             ++i) {
             node->probabilities.push_back(
-                static_cast<double>(counts[i]) /
-                static_cast<double>(object_ids.size())
+                static_cast<double>(
+                    class_weights[i] / total_weight
+                )
             );
 
-            if (counts[i] > counts[winner]) {
+            if (class_weights[i] > class_weights[winner]) {
                 winner = i;
             }
         }
@@ -116,31 +145,96 @@ std::unique_ptr<CartTree::Node> CartTree::build(
 
     bool all_equal = true;
 
-    for (std::size_t i = 1; i < object_ids.size(); ++i) {
+    for (std::size_t i = 1;
+         i < object_ids.size();
+         ++i) {
         if (target[object_ids[i]] != target[object_ids[0]]) {
             all_equal = false;
             break;
         }
     }
 
-    if (current_depth >= parameters_.max_depth ||
+    if ((parameters_.max_depth &&
+         current_depth >= *parameters_.max_depth) ||
         object_ids.size() < parameters_.min_samples_split ||
-        object_ids.size() / 2 < parameters_.min_samples_leaf ||
+        object_ids.size() / 2 <
+            parameters_.min_samples_leaf ||
         all_equal) {
         ++leaves;
         return node;
     }
 
-    const auto split = split_finder_.find_best(
-        features,
-        target,
-        object_ids,
-        feature_ids,
-        criterion_,
-        parameters_.min_samples_leaf
+    std::vector<std::size_t> feature_order(features.cols);
+
+    std::iota(
+        feature_order.begin(),
+        feature_order.end(),
+        0
     );
 
-    if (!split) {
+    std::size_t budget = features.cols;
+
+    if (feature_search_.mode == FeatureMode::Sqrt) {
+        budget = std::max<std::size_t>(
+            1,
+            static_cast<std::size_t>(
+                std::sqrt(
+                    static_cast<long double>(features.cols)
+                )
+            )
+        );
+    } else if (feature_search_.mode == FeatureMode::Count) {
+        budget = feature_search_.count;
+    }
+
+    // Preserve Lab 3 ordering for the All mode.
+    if (feature_search_.mode != FeatureMode::All) {
+        std::shuffle(
+            feature_order.begin(),
+            feature_order.end(),
+            rng
+        );
+    }
+
+    std::optional<Split> best;
+
+    std::size_t checked = 0;
+    bool found_nonconstant = false;
+
+    for (const auto feature : feature_order) {
+        if (checked >= budget && found_nonconstant) {
+            break;
+        }
+
+        const auto result = split_finder_.find_for_feature(
+            features,
+            target,
+            object_ids,
+            feature,
+            criterion_,
+            parameters_.min_samples_leaf,
+            counts
+        );
+
+        ++checked;
+
+        if (!result.is_constant) {
+            found_nonconstant = true;
+        }
+
+        if (result.best &&
+            (!best ||
+             result.best->score > best->score ||
+             (result.best->score == best->score &&
+              (result.best->feature < best->feature ||
+               (result.best->feature == best->feature &&
+                result.best->threshold <
+                    best->threshold))))) {
+            best = result.best;
+        }
+    }
+
+    if (!best) {
         ++leaves;
         return node;
     }
@@ -152,7 +246,7 @@ std::unique_ptr<CartTree::Node> CartTree::build(
     right.reserve(object_ids.size());
 
     for (const auto id : object_ids) {
-        if (features(id, split->feature) <= split->threshold) {
+        if (features(id, best->feature) <= best->threshold) {
             left.push_back(id);
         } else {
             right.push_back(id);
@@ -166,16 +260,17 @@ std::unique_ptr<CartTree::Node> CartTree::build(
         );
     }
 
-    node->feature = split->feature;
-    node->threshold = split->threshold;
+    node->feature = best->feature;
+    node->threshold = best->threshold;
 
     node->left = build(
         features,
         target,
         left,
-        feature_ids,
+        counts,
         current_depth + 1,
         classes,
+        rng,
         nodes,
         leaves,
         deepest
@@ -185,9 +280,10 @@ std::unique_ptr<CartTree::Node> CartTree::build(
         features,
         target,
         right,
-        feature_ids,
+        counts,
         current_depth + 1,
         classes,
+        rng,
         nodes,
         leaves,
         deepest
@@ -201,6 +297,14 @@ std::unique_ptr<CartTree::Node> CartTree::build(
 void CartTree::fit(
     const NumericMatrix& features,
     std::span<const double> target
+) {
+    fit_with_counts(features, target, {});
+}
+
+void CartTree::fit_with_counts(
+    const NumericMatrix& features,
+    std::span<const double> target,
+    std::span<const std::size_t> counts
 ) {
     if (features.rows == 0 || features.cols == 0) {
         throw InvalidModelParameterError(
@@ -217,13 +321,27 @@ void CartTree::fit(
     if (features.rows >
             std::numeric_limits<std::size_t>::max() /
                 features.cols ||
-        features.values.size() != features.rows * features.cols) {
+        features.values.size() !=
+            features.rows * features.cols) {
         throw DimensionMismatchError(
             "Invalid training matrix dimensions"
         );
     }
 
-    for (const auto value : features.values) {
+    if (!counts.empty() && counts.size() != features.rows) {
+        throw DimensionMismatchError(
+            "Bootstrap counts must match training rows"
+        );
+    }
+
+    if (feature_search_.mode == FeatureMode::Count &&
+        feature_search_.count > features.cols) {
+        throw InvalidModelParameterError(
+            "Requested feature count exceeds columns"
+        );
+    }
+
+    for (const double value : features.values) {
         if (!std::isfinite(value)) {
             throw InvalidModelParameterError(
                 "Non-finite feature value"
@@ -231,7 +349,7 @@ void CartTree::fit(
         }
     }
 
-    for (const auto value : target) {
+    for (const double value : target) {
         if (!std::isfinite(value)) {
             throw InvalidModelParameterError(
                 "Non-finite target value"
@@ -239,12 +357,34 @@ void CartTree::fit(
         }
     }
 
+    std::vector<std::size_t> object_ids;
+    object_ids.reserve(features.rows);
+
+    for (std::size_t id = 0; id < features.rows; ++id) {
+        if (counts.empty() || counts[id] != 0) {
+            object_ids.push_back(id);
+        }
+    }
+
+    if (object_ids.empty()) {
+        throw InvalidModelParameterError(
+            "At least one bootstrap count must be positive"
+        );
+    }
+
     std::vector<double> new_classes;
 
     if (criterion_ == SplitCriterion::Gini) {
-        new_classes.assign(target.begin(), target.end());
+        new_classes.reserve(object_ids.size());
 
-        std::sort(new_classes.begin(), new_classes.end());
+        for (const auto id : object_ids) {
+            new_classes.push_back(target[id]);
+        }
+
+        std::sort(
+            new_classes.begin(),
+            new_classes.end()
+        );
 
         new_classes.erase(
             std::unique(
@@ -255,29 +395,27 @@ void CartTree::fit(
         );
     }
 
-    std::vector<std::size_t> object_ids(features.rows);
-    std::vector<std::size_t> feature_ids(features.cols);
-
-    std::iota(object_ids.begin(), object_ids.end(), 0);
-    std::iota(feature_ids.begin(), feature_ids.end(), 0);
+    // Restart random generation for every fit.
+    std::mt19937 rng(random_state_);
 
     std::size_t nodes = 0;
     std::size_t leaves = 0;
     std::size_t deepest = 0;
 
-    // Build a new tree before replacing the trained state.
     auto new_root = build(
         features,
         target,
         object_ids,
-        feature_ids,
+        counts,
         0,
         new_classes,
+        rng,
         nodes,
         leaves,
         deepest
     );
 
+    // Replace the old trained state only after success.
     root_ = std::move(new_root);
     classes_ = std::move(new_classes);
 
@@ -318,7 +456,7 @@ void CartTree::validate_prediction(
         );
     }
 
-    for (const auto value : features.values) {
+    for (const double value : features.values) {
         if (!std::isfinite(value)) {
             throw InvalidModelParameterError(
                 "Non-finite prediction feature value"
@@ -334,9 +472,10 @@ const CartTree::Node& CartTree::find_leaf(
     const Node* node = root_.get();
 
     while (!node->is_leaf) {
-        node = features(row, node->feature) <= node->threshold
-            ? node->left.get()
-            : node->right.get();
+        node =
+            features(row, node->feature) <= node->threshold
+                ? node->left.get()
+                : node->right.get();
     }
 
     return *node;
@@ -350,7 +489,9 @@ std::vector<double> CartTree::predict(
     std::vector<double> result;
     result.reserve(features.rows);
 
-    for (std::size_t row = 0; row < features.rows; ++row) {
+    for (std::size_t row = 0;
+         row < features.rows;
+         ++row) {
         result.push_back(
             find_leaf(features, row).prediction
         );
@@ -371,13 +512,18 @@ NumericMatrix CartTree::predict_proba(
     validate_prediction(features);
 
     NumericMatrix output;
+
     output.rows = features.rows;
     output.cols = classes_.size();
     output.layout = MatrixLayout::RowMajor;
 
-    output.values.reserve(output.rows * output.cols);
+    output.values.reserve(
+        output.rows * output.cols
+    );
 
-    for (std::size_t row = 0; row < features.rows; ++row) {
+    for (std::size_t row = 0;
+         row < features.rows;
+         ++row) {
         const auto& probabilities =
             find_leaf(features, row).probabilities;
 
@@ -451,8 +597,15 @@ std::vector<CartSplitInfo> CartTree::splits(
             node->threshold
         });
 
-        stack.emplace_back(node->right.get(), level + 1);
-        stack.emplace_back(node->left.get(), level + 1);
+        stack.emplace_back(
+            node->right.get(),
+            level + 1
+        );
+
+        stack.emplace_back(
+            node->left.get(),
+            level + 1
+        );
     }
 
     return result;
@@ -460,14 +613,31 @@ std::vector<CartSplitInfo> CartTree::splits(
 
 // CART regression
 
-CartRegressor::CartRegressor(CartParameters parameters)
-    : tree_(SplitCriterion::Variance, parameters) {}
+CartRegressor::CartRegressor(
+    CartParameters parameters,
+    FeatureSearchParams feature_search,
+    std::uint32_t random_state
+)
+    : tree_(
+        SplitCriterion::Variance,
+        parameters,
+        feature_search,
+        random_state
+    ) {}
 
 void CartRegressor::fit(
     const NumericMatrix& features,
     std::span<const double> target
 ) {
     tree_.fit(features, target);
+}
+
+void CartRegressor::fit_with_counts(
+    const NumericMatrix& features,
+    std::span<const double> target,
+    std::span<const std::size_t> counts
+) {
+    tree_.fit_with_counts(features, target, counts);
 }
 
 std::vector<double> CartRegressor::predict(
@@ -496,14 +666,31 @@ std::vector<CartSplitInfo> CartRegressor::splits(
 
 // CART classification
 
-CartClassifier::CartClassifier(CartParameters parameters)
-    : tree_(SplitCriterion::Gini, parameters) {}
+CartClassifier::CartClassifier(
+    CartParameters parameters,
+    FeatureSearchParams feature_search,
+    std::uint32_t random_state
+)
+    : tree_(
+        SplitCriterion::Gini,
+        parameters,
+        feature_search,
+        random_state
+    ) {}
 
 void CartClassifier::fit(
     const NumericMatrix& features,
     std::span<const double> target
 ) {
     tree_.fit(features, target);
+}
+
+void CartClassifier::fit_with_counts(
+    const NumericMatrix& features,
+    std::span<const double> target,
+    std::span<const std::size_t> counts
+) {
+    tree_.fit_with_counts(features, target, counts);
 }
 
 std::vector<double> CartClassifier::predict(
@@ -539,9 +726,4 @@ std::vector<CartSplitInfo> CartClassifier::splits(
 ) const {
     return tree_.splits(limit);
 }
-
-
-
-
-
 

@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+find_package(Threads REQUIRED)
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -27,9 +29,12 @@ add_library(csv_reader
     src/decision_stump.cpp
     src/split_finder.cpp
     src/cart.cpp
+    src/random_forest.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
+
+target_link_libraries(csv_reader PUBLIC Threads::Threads)
 
 target_compile_options(csv_reader PRIVATE
     -Wall
@@ -198,3 +203,188 @@ add_test(
     NAME cart_tests
     COMMAND cart_tests
 )
+
+
+# Lab 4
+add_executable(split_finder_tests
+    tests/test_split_finder.cpp
+)
+
+target_link_libraries(split_finder_tests PRIVATE csv_reader)
+
+target_compile_options(split_finder_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(split_finder_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(split_finder_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME split_finder_tests
+    COMMAND split_finder_tests
+)
+
+add_executable(cart_weighted_tests
+    tests/test_cart_weighted.cpp
+)
+
+target_link_libraries(cart_weighted_tests PRIVATE csv_reader)
+
+target_compile_options(cart_weighted_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(cart_weighted_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(cart_weighted_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME cart_weighted_tests
+    COMMAND cart_weighted_tests
+)
+
+
+# Lab 4 — Random Forest regression tests
+add_executable(random_forest_regression_tests
+    tests/test_random_forest_regression.cpp
+)
+
+target_link_libraries(
+    random_forest_regression_tests
+    PRIVATE csv_reader
+)
+
+target_compile_options(
+    random_forest_regression_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(
+        random_forest_regression_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(
+        random_forest_regression_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME random_forest_regression_tests
+    COMMAND random_forest_regression_tests
+)
+
+add_executable(random_forest_classification_tests
+    tests/test_random_forest_classification.cpp
+)
+
+target_link_libraries(
+    random_forest_classification_tests
+    PRIVATE csv_reader
+)
+
+target_compile_options(
+    random_forest_classification_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(
+        random_forest_classification_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(
+        random_forest_classification_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME random_forest_classification_tests
+    COMMAND random_forest_classification_tests
+)
+
+add_executable(forest_parallel_tests
+    tests/test_forest_parallel.cpp
+)
+
+target_link_libraries(
+    forest_parallel_tests
+    PRIVATE csv_reader
+)
+
+target_compile_options(forest_parallel_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(forest_parallel_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(forest_parallel_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME forest_parallel_tests
+    COMMAND forest_parallel_tests
+)
+
+add_executable(random_forest_demo
+    app/random_forest_demo.cpp
+)
+
+target_link_libraries(
+    random_forest_demo
+    PRIVATE csv_reader
+)
+
+target_compile_options(random_forest_demo PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(random_forest_demo PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(random_forest_demo PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()

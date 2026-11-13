@@ -1,11 +1,29 @@
 # Autism Screening Adult Machine Learning Project
 
+
 ## Project Overview
-This project implements a C++20 data processing pipeline for the
-UCI Autism Screening Adult dataset. Laboratory Work No. 1 focuses
-on CSV loading, exploratory statistics, preprocessing, categorical
-encoding, and binary serialization. The resulting numerical dataset
-will be used in subsequent machine learning laboratory works.
+
+This project is an educational C++20 machine learning implementation
+based on the UCI Autism Screening Adult dataset.
+
+The repository is developed incrementally through laboratory assignments.
+It includes a complete data preprocessing pipeline, decision stumps,
+CART decision trees, and Random Forest models for regression and
+classification.
+
+All machine learning algorithms are implemented in C++ without
+third-party machine learning libraries. The project uses CMake,
+automated tests through CTest, and optional sanitizers.
+
+The Random Forest implementation supports bootstrap sampling,
+random feature selection at each tree node, deterministic random
+seeds, probability averaging for classification, and parallel
+training and prediction using C++20 std::jthread.
+
+The project is intended for educational purposes. The dataset's
+Class/ASD target represents a screening classification, not a
+confirmed clinical diagnosis.
+
 
 ## Dataset Description
 - Dataset: Autism Screening Adult (UCI)
@@ -246,3 +264,391 @@ ctest --test-dir build-sanitize --output-on-failure
   dataset's target labels.
 - RowMajor and ColumnMajor offer equivalent logical access,
   but have different memory access patterns.
+
+
+## Lab 4 — Random Forest (Star Track)
+
+### Overview
+
+Lab 4 implements Random Forest models for regression and
+classification using the CART trees developed in Lab 3.
+
+The implementation follows the core algorithmic principles of
+scikit-learn 1.8.0 RandomForestRegressor and
+RandomForestClassifier. It does not reproduce the complete
+scikit-learn API or its exact random number sequences.
+
+The forest combines multiple CART estimators trained with
+independent random seeds and, optionally, bootstrap samples.
+
+### Architecture
+
+The main components are:
+
+- `RandomForestParameters`: forest configuration.
+- `RandomForestRegressor`: regression ensemble implementing IRegressor.
+- `RandomForestClassifier`: classification ensemble implementing IClassifier.
+- `CartRegressor` and `CartClassifier`: reusable base estimators.
+- `SplitFinder`: weighted numerical split search.
+- `forest_parallel::for_each_index`: bounded parallel task execution.
+
+The forest owns its trees through a vector of std::unique_ptr
+instances. Each tree owns its nodes recursively through
+std::unique_ptr.
+
+The forest uses composition rather than inheritance from CART.
+Both standalone CART and forest estimators share the same tree
+building and split-search implementations.
+
+No external machine learning algorithms or metrics libraries
+are used.
+
+### Hyperparameters
+
+| Parameter | Description |
+|---|---|
+| n_estimators | Number of trees; default: 100 |
+| bootstrap | Enable sampling with replacement; default: true |
+| max_samples | Optional number of bootstrap draws |
+| max_features | All, Sqrt, or an explicit feature count |
+| max_depth | Optional tree depth limit |
+| min_samples_split | Minimum number of distinct source objects required to attempt a split |
+| min_samples_leaf | Minimum number of distinct source objects per child |
+| random_state | Global seed for reproducible forest construction |
+| n_jobs | Maximum number of worker threads |
+
+By default, classification uses Sqrt feature sampling, whereas
+regression uses All features.
+
+### Bootstrap Sampling
+
+For each tree, bootstrap sampling draws training indices with
+replacement. By default, the number of draws equals the
+number of training objects.
+
+Repeated indices are represented by integer multiplicities
+rather than physically duplicated matrix rows.
+
+For an original object i, its multiplicity is count[i].
+
+The implementation distinguishes:
+
+- The number of distinct source indices in a node.
+- The total weight, equal to the sum of multiplicities.
+
+The min_samples_split and min_samples_leaf constraints use
+the number of distinct source indices.
+
+Regression means, class frequencies, and split criteria use
+the bootstrap multiplicities.
+
+A class may be absent from an individual bootstrap sample.
+This is a valid outcome and is not corrected by resampling.
+
+When bootstrap is disabled, every training object has unit
+multiplicity.
+
+### Random Feature Selection
+
+At each CART node, a fresh ordering of candidate features
+is generated according to the configured feature-search policy.
+
+The supported modes are:
+
+- All: consider every feature.
+- Sqrt: consider approximately sqrt(d) features.
+- Count: consider an explicitly configured number of features.
+
+If the initial candidate features are constant, the search
+continues until a nonconstant feature is considered or all
+features have been exhausted.
+
+For each considered feature, SplitFinder evaluates valid
+thresholds and selects the best split.
+
+The threshold itself is not selected randomly.
+
+### Weighted Split Criteria
+
+For regression, the split search maximizes:
+
+    S_left^2 / W_left + S_right^2 / W_right
+
+where S is the weighted target sum and W is the total
+bootstrap multiplicity.
+
+For classification, the split search maximizes:
+
+    A_left / W_left + A_right / W_right
+
+where A is the sum of squared weighted class counts.
+
+Both criteria use the same sorted-threshold search mechanism
+as the earlier CART implementation.
+
+The split search has O(d * n * log(n)) complexity at a node
+when all d features are considered.
+
+### Regression Predictions
+
+Each tree produces a numerical prediction.
+
+The forest prediction is the arithmetic mean of the
+individual tree predictions:
+
+    prediction(x) = sum(tree_b(x)) / B
+
+where B is the number of trees.
+
+### Classification Predictions
+
+Each classification tree returns class probabilities,
+calculated from weighted class frequencies in its leaf.
+
+The forest averages probabilities across trees:
+
+    P(class=c | x) = sum(P_b(class=c | x)) / B
+
+The final predicted class is the class with the highest
+average probability.
+
+The algorithm does not use majority voting over tree labels.
+
+The global class order is determined from the complete
+training target and returned by classes().
+
+If a bootstrap sample does not contain a particular class,
+that tree contributes zero probability for the missing class.
+
+Probability columns are aligned with the forest's global
+class order before averaging.
+
+In the event of a tie, the smallest numerical class label
+is selected.
+
+### Parallel Execution
+
+Parallel training and prediction use C++20 std::jthread.
+
+The n_jobs parameter limits the number of worker threads.
+The actual number of workers does not exceed the number
+of trees.
+
+For n_jobs=1, tasks execute sequentially.
+
+Each worker processes a deterministic subset of tree indices.
+The input feature matrix and target vector are shared
+read-only.
+
+Each tree is constructed and trained independently.
+Workers write into separate, preallocated result slots.
+
+No shared mutable random number generator is used.
+
+Exceptions raised by worker tasks are captured as
+std::exception_ptr values. After all worker threads have
+finished, exceptions are rethrown in the calling thread.
+
+Predictions are accumulated in tree-index order rather than
+thread-completion order.
+
+This makes results reproducible within the same execution
+environment when changing n_jobs.
+
+### Random Seeds and Reproducibility
+
+The forest initializes a master std::mt19937 generator from
+random_state.
+
+Before parallel execution, it generates distinct seeds
+for bootstrap sampling and feature selection.
+
+Each tree uses its assigned seeds independently.
+
+Calling fit() again with unchanged inputs and parameters
+reconstructs the same random sequence and trained ensemble
+within the same environment.
+
+Different numbers of worker threads do not change the
+assignment of seeds to trees.
+
+Exact agreement with scikit-learn's random forests is not
+expected because the implementations use different random
+number generation and internal tie-breaking details.
+
+### Training Lifecycle
+
+The forest constructor validates parameters that do not
+depend on the training data.
+
+fit() validates the input and constructs a complete new
+ensemble.
+
+Successful training replaces the previous forest rather
+than appending additional trees.
+
+If a refit fails, the previous trained ensemble remains
+available.
+
+Prediction does not modify the trained forest.
+
+Calling predict() before successful training raises an
+exception.
+
+### Computational Complexity
+
+Let:
+
+- B be the number of trees.
+- n be the number of training objects.
+- d be the number of features.
+- q be the number of candidate features considered per node.
+- h be the tree depth.
+
+For a node containing s distinct source objects, the
+candidate split search requires approximately:
+
+    O(q * s * log(s))
+
+The total training cost is the sum of this work across
+all internal nodes of all B trees.
+
+For balanced trees and a fixed feature budget, a rough
+training estimate is:
+
+    O(B * q * n * log(n)^2)
+
+This is an estimate rather than a strict bound for
+arbitrary tree shapes.
+
+Prediction for m objects requires approximately:
+
+    O(B * m * h)
+
+The implementation stores the original feature matrix
+once and passes source indices and multiplicities to
+the CART training logic.
+
+Parallel execution may reduce wall-clock time but does
+not reduce the total algorithmic work. Additional memory
+is required for independent prediction buffers.
+
+### Demonstration
+
+The Random Forest demonstration compares standalone CART
+and Random Forest classification using the same train/test
+split of the Autism Screening Adult dataset.
+
+It reports:
+
+- Training and test sample counts.
+- Number of processed features.
+- Classification accuracy.
+- Several predictions and their probabilities.
+- Tree node counts and depths.
+- Training and prediction times.
+- Sequential and parallel performance.
+
+A separate synthetic example demonstrates regression.
+
+Build and run:
+
+```bash
+cmake -S . -B build
+cmake --build build -j 4
+
+./build/random_forest_demo data/Autism-Adult-Data.csv
+```
+
+For meaningful timing measurements, use a Release build
+without sanitizers:
+
+```bash
+cmake -S . -B build-release \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DENABLE_SANITIZERS=OFF
+
+cmake --build build-release -j 4
+
+./build-release/random_forest_demo \
+  data/Autism-Adult-Data.csv
+```
+
+The demonstration measures preprocessing separately from
+model training and prediction.
+
+Training and prediction times are measured independently.
+Three repetitions are used, and the median is reported.
+
+Parallel speedup is defined as:
+
+    speedup = sequential_time / parallel_time
+
+Parallel execution may be slower on small datasets because
+thread creation and result aggregation introduce overhead.
+
+
+### Testing
+
+The project includes dedicated test executables for:
+
+- Data loading and preprocessing.
+- Decision Stump.
+- Matrix slices.
+- CART.
+- Weighted SplitFinder.
+- Weighted CART.
+- Random Forest regression.
+- Random Forest classification.
+- Parallel Random Forest execution.
+
+The tests cover reproducibility, input validation,
+weighted splits, missing bootstrap classes, single-tree
+equivalence, both matrix layouts, repeated fitting,
+prediction before training, and exception propagation.
+
+Run the test suite:
+
+```bash
+cmake -S . -B build
+cmake --build build -j 4
+ctest --test-dir build --output-on-failure
+```
+
+Debug validation with AddressSanitizer and
+UndefinedBehaviorSanitizer:
+
+```bash
+cmake -S . -B build-sanitize \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DENABLE_SANITIZERS=ON
+
+cmake --build build-sanitize -j 4
+
+ctest --test-dir build-sanitize \
+  --output-on-failure
+```
+
+ThreadSanitizer may be run separately when supported
+by the compiler and platform.
+
+### Limitations
+
+- Only finite, dense numerical feature matrices are supported.
+- Missing values must be handled before model training.
+- Multi-output targets and sparse matrices are not supported.
+- Native NaN handling is not implemented.
+- Sample weights other than internal bootstrap multiplicities
+  are not supported.
+- OOB scoring and impurity-based feature importance are not
+  implemented.
+- Pruning, warm start, and monotonic constraints are omitted.
+- Exact equivalence with scikit-learn's random sequences and
+  internal tree structures is not guaranteed.
+- Parallel speedup depends on dataset size and hardware.
+- Screening classification results must not be interpreted
+  as clinical diagnostic performance.
+
+The laboratory focuses on implementing the core Random
+Forest algorithm and demonstrating its correctness,
+reproducibility, and execution behavior.
