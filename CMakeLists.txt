@@ -228,3 +228,31 @@ add_test(
     NAME split_finder_tests
     COMMAND split_finder_tests
 )
+
+add_executable(cart_weighted_tests
+    tests/test_cart_weighted.cpp
+)
+
+target_link_libraries(cart_weighted_tests PRIVATE csv_reader)
+
+target_compile_options(cart_weighted_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(cart_weighted_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(cart_weighted_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME cart_weighted_tests
+    COMMAND cart_weighted_tests
+)

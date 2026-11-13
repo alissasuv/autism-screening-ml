@@ -4,14 +4,29 @@
 #include "split_finder.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <random>
 #include <span>
 #include <vector>
 
 struct CartParameters {
-    std::size_t max_depth = 5;
+    // nullopt means unlimited depth.
+    std::optional<std::size_t> max_depth = 5;
     std::size_t min_samples_split = 2;
     std::size_t min_samples_leaf = 1;
+};
+
+enum class FeatureMode {
+    All,
+    Sqrt,
+    Count
+};
+
+struct FeatureSearchParams {
+    FeatureMode mode = FeatureMode::All;
+    std::size_t count = 1;
 };
 
 struct CartSplitInfo {
@@ -22,17 +37,30 @@ struct CartSplitInfo {
 
 class CartTree {
 public:
-    CartTree(SplitCriterion criterion, CartParameters parameters);
+    CartTree(
+        SplitCriterion criterion,
+        CartParameters parameters,
+        FeatureSearchParams feature_search = {},
+        std::uint32_t random_state = 0
+    );
+
     ~CartTree();
 
     CartTree(const CartTree&) = delete;
     CartTree& operator=(const CartTree&) = delete;
+
     CartTree(CartTree&&) noexcept;
     CartTree& operator=(CartTree&&) noexcept;
 
     void fit(
         const NumericMatrix& features,
         std::span<const double> target
+    );
+
+    void fit_with_counts(
+        const NumericMatrix& features,
+        std::span<const double> target,
+        std::span<const std::size_t> counts
     );
 
     std::vector<double> predict(
@@ -58,6 +86,9 @@ private:
 
     SplitCriterion criterion_;
     CartParameters parameters_;
+    FeatureSearchParams feature_search_;
+    std::uint32_t random_state_;
+
     SplitFinder split_finder_;
 
     std::unique_ptr<Node> root_;
@@ -72,9 +103,10 @@ private:
         const NumericMatrix& features,
         std::span<const double> target,
         std::span<const std::size_t> object_ids,
-        std::span<const std::size_t> feature_ids,
+        std::span<const std::size_t> counts,
         std::size_t current_depth,
         std::span<const double> classes,
+        std::mt19937& rng,
         std::size_t& nodes,
         std::size_t& leaves,
         std::size_t& deepest
@@ -92,12 +124,22 @@ private:
 
 class CartRegressor final : public IRegressor {
 public:
-    explicit CartRegressor(CartParameters parameters = {});
+    explicit CartRegressor(
+        CartParameters parameters = {},
+        FeatureSearchParams feature_search = {},
+        std::uint32_t random_state = 0
+    );
 
     void fit(
         const NumericMatrix& features,
         std::span<const double> target
     ) override;
+
+    void fit_with_counts(
+        const NumericMatrix& features,
+        std::span<const double> target,
+        std::span<const std::size_t> counts
+    );
 
     std::vector<double> predict(
         const NumericMatrix& features
@@ -117,12 +159,22 @@ private:
 
 class CartClassifier final : public IClassifier {
 public:
-    explicit CartClassifier(CartParameters parameters = {});
+    explicit CartClassifier(
+        CartParameters parameters = {},
+        FeatureSearchParams feature_search = {},
+        std::uint32_t random_state = 0
+    );
 
     void fit(
         const NumericMatrix& features,
         std::span<const double> target
     ) override;
+
+    void fit_with_counts(
+        const NumericMatrix& features,
+        std::span<const double> target,
+        std::span<const std::size_t> counts
+    );
 
     std::vector<double> predict(
         const NumericMatrix& features
@@ -145,11 +197,5 @@ public:
 private:
     CartTree tree_;
 };
-
-
-
-
-
-
 
 
