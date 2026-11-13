@@ -362,3 +362,29 @@ add_test(
     NAME forest_parallel_tests
     COMMAND forest_parallel_tests
 )
+
+add_executable(random_forest_demo
+    app/random_forest_demo.cpp
+)
+
+target_link_libraries(
+    random_forest_demo
+    PRIVATE csv_reader
+)
+
+target_compile_options(random_forest_demo PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(random_forest_demo PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(random_forest_demo PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
