@@ -27,6 +27,7 @@ add_library(csv_reader
     src/decision_stump.cpp
     src/split_finder.cpp
     src/cart.cpp
+    src/random_forest.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
@@ -255,4 +256,40 @@ endif()
 add_test(
     NAME cart_weighted_tests
     COMMAND cart_weighted_tests
+)
+
+
+# Lab 4 — Random Forest regression tests
+add_executable(random_forest_regression_tests
+    tests/test_random_forest_regression.cpp
+)
+
+target_link_libraries(
+    random_forest_regression_tests
+    PRIVATE csv_reader
+)
+
+target_compile_options(
+    random_forest_regression_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(
+        random_forest_regression_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(
+        random_forest_regression_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME random_forest_regression_tests
+    COMMAND random_forest_regression_tests
 )
