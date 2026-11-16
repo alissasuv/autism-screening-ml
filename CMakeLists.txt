@@ -30,6 +30,7 @@ add_library(csv_reader
     src/split_finder.cpp
     src/cart.cpp
     src/random_forest.cpp
+    src/lab5_data.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
@@ -388,3 +389,50 @@ if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         -fsanitize=address,undefined
     )
 endif()
+
+# Lab 5
+
+add_executable(prepare_data
+    app/prepare_data.cpp
+)
+
+target_link_libraries(prepare_data PRIVATE
+    csv_reader
+)
+
+target_compile_options(prepare_data PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(prepare_data PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(prepare_data PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+# Lab 5 - Data preparation tests
+
+add_executable(lab5_data_tests
+    tests/test_lab5_data.cpp
+)
+
+target_link_libraries(lab5_data_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_data_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+add_test(
+    NAME lab5_data_tests
+    COMMAND lab5_data_tests
+)

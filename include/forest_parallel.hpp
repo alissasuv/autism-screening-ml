@@ -6,6 +6,8 @@
 #include <thread>
 #include <vector>
 
+// todo: в чем разница между полиморфизмом на шалонах и на виртуальных функциях? Когда выгодно одно и когда - другое?
+
 namespace forest_parallel {
 
 template <typename Work>
