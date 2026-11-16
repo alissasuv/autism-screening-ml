@@ -164,10 +164,6 @@ std::vector<std::size_t> bootstrap_counts(
 
 } // namespace
 
-// ============================================================
-// Random Forest Regressor
-// ============================================================
-
 RandomForestRegressor::RandomForestRegressor(
     RandomForestParameters parameters
 )
@@ -324,10 +320,6 @@ RandomForestRegressor::tree_depths() const {
 
     return result;
 }
-
-// ============================================================
-// Random Forest Classifier
-// ============================================================
 
 RandomForestParameters classifier_default_parameters() {
     RandomForestParameters parameters;
