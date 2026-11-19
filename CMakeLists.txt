@@ -565,3 +565,55 @@ add_test(
     NAME lab5_validation_tests
     COMMAND lab5_validation_tests
 )
+
+# Lab 5 - Grid search and model tuning
+
+target_sources(csv_reader PRIVATE
+    src/search.cpp
+)
+
+add_executable(tune_model
+    app/tune_model.cpp
+)
+
+target_link_libraries(tune_model PRIVATE
+    csv_reader
+)
+
+target_compile_options(tune_model PRIVATE
+    -Wall
+    -Wextra
+)
+
+add_executable(lab5_search_tests
+    tests/test_lab5_search.cpp
+)
+
+target_link_libraries(lab5_search_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_search_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    foreach(target tune_model lab5_search_tests)
+        target_compile_options(${target} PRIVATE
+            -fsanitize=address,undefined
+            -fno-omit-frame-pointer
+            -g
+        )
+
+        target_link_options(${target} PRIVATE
+            -fsanitize=address,undefined
+        )
+    endforeach()
+endif()
+
+add_test(
+    NAME lab5_search_tests
+    COMMAND lab5_search_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/search_deep_forest.yaml"
+)
