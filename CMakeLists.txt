@@ -492,3 +492,39 @@ add_test(
     COMMAND lab5_preprocessing_tests
         "${CMAKE_CURRENT_SOURCE_DIR}/configs/preprocessing.yaml"
 )
+
+# Lab 5 - Shared regression and classification metrics
+
+target_sources(csv_reader PRIVATE
+    src/metrics.cpp
+)
+
+add_executable(lab5_metrics_tests
+    tests/test_lab5_metrics.cpp
+)
+
+target_link_libraries(lab5_metrics_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_metrics_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lab5_metrics_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(lab5_metrics_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME lab5_metrics_tests
+    COMMAND lab5_metrics_tests
+)
