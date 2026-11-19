@@ -704,3 +704,43 @@ add_test(
     NAME lab5_feature_importance_tests
     COMMAND lab5_feature_importance_tests
 )
+
+# Lab 5 - End-to-end regression smoke test
+
+add_executable(lab5_regression_smoke_tests
+    tests/test_lab5_regression_smoke.cpp
+)
+
+target_link_libraries(lab5_regression_smoke_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_regression_smoke_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lab5_regression_smoke_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(lab5_regression_smoke_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME lab5_regression_smoke_tests
+    COMMAND lab5_regression_smoke_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/synthetic_regression.csv"
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/preprocessing.yaml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/smoke_regression_deep.yaml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/smoke_regression_shallow.yaml"
+)
+
+set_tests_properties(lab5_regression_smoke_tests PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+)

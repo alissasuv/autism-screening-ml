@@ -652,3 +652,140 @@ by the compiler and platform.
 The laboratory focuses on implementing the core Random
 Forest algorithm and demonstrating its correctness,
 reproducibility, and execution behavior.
+
+---
+
+## Lab 5: Random Forest Hyperparameter Tuning and Evaluation
+
+This laboratory extends the existing C++20 Random Forest implementation with a reproducible machine-learning pipeline for data preparation, hyperparameter tuning, evaluation, and feature importance analysis.
+
+The advanced track compares two Random Forest configurations:
+
+- **Deep Forest:** trees with unrestricted maximum depth.
+- **Shallow Forest:** trees with maximum depth of 2 or 3.
+
+Both classification and regression are supported. The main experiment uses the UCI Autism Screening Adult dataset, while a small synthetic dataset is used for regression testing.
+
+### Build and Test
+
+```bash
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+cmake --build build -j 4
+ctest --test-dir build --output-on-failure
+```
+
+All 17 registered tests passed.
+
+### Data Preparation
+
+The main dataset contains 704 observations with `Class/ASD` as the target variable.
+
+```bash
+./build/prepare_data \
+  --input data/Autism-Adult-Data.csv \
+  --target 'Class/ASD' \
+  --task classification \
+  --train-output data/train.bin \
+  --test-output data/test.bin \
+  --stats-output results/dataset_stats.json \
+  --test-size 0.2 \
+  --random-state 42
+```
+
+The resulting stratified split contains 563 training and 141 test observations. Raw data is preserved before preprocessing.
+
+### Hyperparameter Tuning
+
+The `tune_model` application performs YAML-configured grid search using three-fold stratified cross-validation.
+
+Preprocessing is fitted independently on each training fold to prevent data leakage.
+
+Example for the deep forest:
+
+```bash
+./build/tune_model \
+  --train data/train.bin \
+  --target 'Class/ASD' \
+  --preprocessing-config configs/preprocessing.yaml \
+  --config configs/search_deep_forest.yaml \
+  --results-output results/deep_forest_search.csv \
+  --best-config-output results/best_deep_forest.yaml
+```
+
+For the shallow forest, use `configs/search_shallow_forest.yaml` and the corresponding output filenames.
+
+### Final Evaluation
+
+The `evaluate_model` application retrains the selected configuration on the full training partition and evaluates it on the held-out test set.
+
+It also supports permutation feature importance without retraining the model.
+
+```bash
+./build/evaluate_model \
+  --train data/train.bin \
+  --test data/test.bin \
+  --target 'Class/ASD' \
+  --preprocessing-config configs/preprocessing.yaml \
+  --model-config results/best_deep_forest.yaml \
+  --metrics-output results/deep_forest_metrics.csv \
+  --predictions-output results/deep_forest_predictions.csv \
+  --feature-importance \
+  --importance-repeats 5 \
+  --importance-random-state 123 \
+  --importance-output results/deep_forest_importance.csv
+```
+
+### Classification Results
+
+| Metric | Deep Forest | Shallow Forest |
+|---|---:|---:|
+| Best CV Macro-F1 | 0.997715 | 0.983711 |
+| Test Accuracy | 1.000000 | 0.978723 |
+| Test Macro-Precision | 1.000000 | 0.985849 |
+| Test Macro-Recall | 1.000000 | 0.960526 |
+| Test Macro-F1 | 1.000000 | 0.972275 |
+
+The deep forest outperformed the shallow forest on the held-out test set.
+
+Permutation importance identified `result` as the most influential original feature for both models. Because this attribute is closely related to the screening target, the near-perfect classification performance should be interpreted cautiously.
+
+### Regression Smoke Test
+
+A separate synthetic regression experiment verifies the complete tuning and evaluation pipeline.
+
+```bash
+./build/lab5_regression_smoke_tests \
+  data/synthetic_regression.csv \
+  configs/preprocessing.yaml \
+  configs/smoke_regression_deep.yaml \
+  configs/smoke_regression_shallow.yaml
+```
+
+The experiment uses 18 training and 6 test observations with two-fold cross-validation.
+
+| Metric | Deep Forest | Shallow Forest |
+|---|---:|---:|
+| Best CV MSE | 33.9904 | 34.2412 |
+| Test MSE | 10.9063 | 11.6385 |
+| Test MAE | 2.65278 | 2.89884 |
+| Test R² | 0.975272 | 0.973611 |
+
+Both models completed hyperparameter selection, final evaluation, prediction export, and permutation feature importance.
+
+The regression smoke test uses a deterministic in-memory split rather than the classification-only `prepare_data` CLI.
+
+### Experiment Artifacts
+
+- `configs/` — preprocessing and model search configurations.
+- `results/best_*.yaml` — selected hyperparameters.
+- `results/*_search.csv` — cross-validation results.
+- `results/*_metrics.csv` — training and test metrics.
+- `results/*_predictions.csv` — exported predictions.
+- `results/*_importance.csv` — permutation feature importance.
+- `docs/report.md` — detailed experimental analysis.
+- `docs/agent_log/lab_5.md` — AI assistance and implementation log.
+
+The screening classification results are intended for educational purposes and must not be interpreted as clinical diagnostic performance.
