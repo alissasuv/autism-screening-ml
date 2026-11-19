@@ -30,6 +30,7 @@ add_library(csv_reader
     src/split_finder.cpp
     src/cart.cpp
     src/random_forest.cpp
+    src/lab5_data.cpp
 )
 
 target_include_directories(csv_reader PUBLIC include)
@@ -388,3 +389,358 @@ if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         -fsanitize=address,undefined
     )
 endif()
+
+# Lab 5
+
+add_executable(prepare_data
+    app/prepare_data.cpp
+)
+
+target_link_libraries(prepare_data PRIVATE
+    csv_reader
+)
+
+target_compile_options(prepare_data PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(prepare_data PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(prepare_data PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+# Lab 5 - Data preparation tests
+
+add_executable(lab5_data_tests
+    tests/test_lab5_data.cpp
+)
+
+target_link_libraries(lab5_data_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_data_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+add_test(
+    NAME lab5_data_tests
+    COMMAND lab5_data_tests
+)
+# Lab 5 - YAML-backed preprocessing adapter
+
+find_package(yaml-cpp 0.8 CONFIG QUIET)
+
+if(NOT TARGET yaml-cpp::yaml-cpp)
+    set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        yaml_cpp
+        GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+        GIT_TAG 0.8.0
+        GIT_SHALLOW TRUE
+    )
+
+    FetchContent_MakeAvailable(yaml_cpp)
+endif()
+
+target_sources(csv_reader PRIVATE
+    src/lab5_preprocessing.cpp
+)
+
+target_link_libraries(csv_reader PUBLIC
+    yaml-cpp::yaml-cpp
+)
+
+add_executable(lab5_preprocessing_tests
+    tests/test_lab5_preprocessing.cpp
+)
+
+target_link_libraries(lab5_preprocessing_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_preprocessing_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lab5_preprocessing_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(lab5_preprocessing_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME lab5_preprocessing_tests
+    COMMAND lab5_preprocessing_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/preprocessing.yaml"
+)
+
+# Lab 5 - Shared regression and classification metrics
+
+target_sources(csv_reader PRIVATE
+    src/metrics.cpp
+)
+
+add_executable(lab5_metrics_tests
+    tests/test_lab5_metrics.cpp
+)
+
+target_link_libraries(lab5_metrics_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_metrics_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lab5_metrics_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(lab5_metrics_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME lab5_metrics_tests
+    COMMAND lab5_metrics_tests
+)
+
+# Lab 5 - Model factory and cross-validation
+
+target_sources(csv_reader PRIVATE
+    src/model_factory.cpp
+    src/validation.cpp
+)
+
+add_executable(lab5_validation_tests
+    tests/test_lab5_validation.cpp
+)
+
+target_link_libraries(lab5_validation_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_validation_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lab5_validation_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(lab5_validation_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME lab5_validation_tests
+    COMMAND lab5_validation_tests
+)
+
+# Lab 5 - Grid search and model tuning
+
+target_sources(csv_reader PRIVATE
+    src/search.cpp
+)
+
+add_executable(tune_model
+    app/tune_model.cpp
+)
+
+target_link_libraries(tune_model PRIVATE
+    csv_reader
+)
+
+target_compile_options(tune_model PRIVATE
+    -Wall
+    -Wextra
+)
+
+add_executable(lab5_search_tests
+    tests/test_lab5_search.cpp
+)
+
+target_link_libraries(lab5_search_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_search_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    foreach(target tune_model lab5_search_tests)
+        target_compile_options(${target} PRIVATE
+            -fsanitize=address,undefined
+            -fno-omit-frame-pointer
+            -g
+        )
+
+        target_link_options(${target} PRIVATE
+            -fsanitize=address,undefined
+        )
+    endforeach()
+endif()
+
+add_test(
+    NAME lab5_search_tests
+    COMMAND lab5_search_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/search_deep_forest.yaml"
+)
+
+# Lab 5 - Final model evaluation
+
+target_sources(csv_reader PRIVATE
+    src/evaluation.cpp
+)
+
+add_executable(evaluate_model
+    app/evaluate_model.cpp
+)
+
+target_link_libraries(evaluate_model PRIVATE
+    csv_reader
+)
+
+target_compile_options(evaluate_model PRIVATE
+    -Wall
+    -Wextra
+)
+
+add_executable(lab5_evaluation_tests
+    tests/test_lab5_evaluation.cpp
+)
+
+target_link_libraries(lab5_evaluation_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_evaluation_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    foreach(target evaluate_model lab5_evaluation_tests)
+        target_compile_options(${target} PRIVATE
+            -fsanitize=address,undefined
+            -fno-omit-frame-pointer
+            -g
+        )
+
+        target_link_options(${target} PRIVATE
+            -fsanitize=address,undefined
+        )
+    endforeach()
+endif()
+
+add_test(
+    NAME lab5_evaluation_tests
+    COMMAND lab5_evaluation_tests
+)
+
+# Lab 5 - Permutation feature importance
+
+target_sources(csv_reader PRIVATE
+    src/feature_importance.cpp
+)
+
+add_executable(lab5_feature_importance_tests
+    tests/test_lab5_feature_importance.cpp
+)
+
+target_link_libraries(lab5_feature_importance_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_feature_importance_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lab5_feature_importance_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(lab5_feature_importance_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME lab5_feature_importance_tests
+    COMMAND lab5_feature_importance_tests
+)
+
+# Lab 5 - End-to-end regression smoke test
+
+add_executable(lab5_regression_smoke_tests
+    tests/test_lab5_regression_smoke.cpp
+)
+
+target_link_libraries(lab5_regression_smoke_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_regression_smoke_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lab5_regression_smoke_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(lab5_regression_smoke_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME lab5_regression_smoke_tests
+    COMMAND lab5_regression_smoke_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/synthetic_regression.csv"
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/preprocessing.yaml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/smoke_regression_deep.yaml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/smoke_regression_shallow.yaml"
+)
+
+set_tests_properties(lab5_regression_smoke_tests PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+)

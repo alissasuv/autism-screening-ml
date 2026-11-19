@@ -1,0 +1,7 @@
+numeric:
+  imputation: median
+  scaling: standard
+
+categorical:
+  imputation: missing_category
+  encoding: one_hot

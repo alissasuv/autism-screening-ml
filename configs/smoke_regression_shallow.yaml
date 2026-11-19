@@ -1,0 +1,26 @@
+task: regression
+scoring: mse
+
+model:
+  type: random_forest
+  params:
+    max_depth: 2
+    n_estimators: 3
+    max_features: all
+    min_samples_split: 2
+    min_samples_leaf: 1
+    bootstrap: true
+    random_state: 42
+    n_jobs: 1
+
+cv:
+  n_splits: 2
+  random_state: 17
+
+search:
+  method: grid
+  parameters:
+    max_depth:
+      values: [2, 3]
+    n_estimators:
+      values: [3, 5]

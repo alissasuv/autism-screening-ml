@@ -16,3 +16,7 @@ data/*.bin
 build-sanitize/
 
 build-debug/
+
+/data/train.bin
+/data/test.bin
+/results/dataset_stats.json
