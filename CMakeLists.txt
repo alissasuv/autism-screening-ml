@@ -436,3 +436,59 @@ add_test(
     NAME lab5_data_tests
     COMMAND lab5_data_tests
 )
+# Lab 5 - YAML-backed preprocessing adapter
+
+find_package(yaml-cpp 0.8 CONFIG QUIET)
+
+if(NOT TARGET yaml-cpp::yaml-cpp)
+    set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        yaml_cpp
+        GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+        GIT_TAG 0.8.0
+        GIT_SHALLOW TRUE
+    )
+
+    FetchContent_MakeAvailable(yaml_cpp)
+endif()
+
+target_sources(csv_reader PRIVATE
+    src/lab5_preprocessing.cpp
+)
+
+target_link_libraries(csv_reader PUBLIC
+    yaml-cpp::yaml-cpp
+)
+
+add_executable(lab5_preprocessing_tests
+    tests/test_lab5_preprocessing.cpp
+)
+
+target_link_libraries(lab5_preprocessing_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_preprocessing_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lab5_preprocessing_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(lab5_preprocessing_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME lab5_preprocessing_tests
+    COMMAND lab5_preprocessing_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/configs/preprocessing.yaml"
+)
