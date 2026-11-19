@@ -1,14 +1,18 @@
+
 #include "evaluation.hpp"
+#include "feature_importance.hpp"
 #include "lab5_data.hpp"
 #include "lab5_preprocessing.hpp"
 #include "search.hpp"
 
 #include <yaml-cpp/yaml.h>
 
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -24,6 +28,11 @@ struct Arguments {
 
     std::string metrics_output;
     std::string predictions_output;
+
+    bool feature_importance = false;
+    std::size_t importance_repeats = 5;
+    std::uint32_t importance_random_state = 123;
+    std::string importance_output;
 };
 
 void usage() {
@@ -36,7 +45,35 @@ void usage() {
         << " --model-config <yaml>"
         << " --metrics-output <csv>"
         << " --predictions-output <csv>"
-        << " [--target <column>]\n";
+        << " [--target <column>]"
+        << " [--feature-importance"
+        << " --importance-repeats <positive_integer>"
+        << " --importance-random-state <seed>"
+        << " --importance-output <csv>]\n";
+}
+
+std::uint64_t parse_unsigned(
+    const std::string& text,
+    const std::string& argument
+) {
+    if (text.empty() ||
+        text[0] == '-' ||
+        text[0] == '+') {
+        throw std::invalid_argument(
+            "Invalid unsigned value for " + argument
+        );
+    }
+
+    std::size_t position = 0;
+    const auto result = std::stoull(text, &position);
+
+    if (position != text.size()) {
+        throw std::invalid_argument(
+            "Invalid unsigned value for " + argument
+        );
+    }
+
+    return result;
 }
 
 Arguments parse_arguments(int argc, char** argv) {
@@ -48,6 +85,11 @@ Arguments parse_arguments(int argc, char** argv) {
         if (key == "--help" || key == "-h") {
             usage();
             std::exit(0);
+        }
+
+        if (key == "--feature-importance") {
+            args.feature_importance = true;
+            continue;
         }
 
         if (i + 1 >= argc) {
@@ -72,6 +114,33 @@ Arguments parse_arguments(int argc, char** argv) {
             args.metrics_output = value;
         } else if (key == "--predictions-output") {
             args.predictions_output = value;
+        } else if (key == "--importance-repeats") {
+            const auto parsed = parse_unsigned(value, key);
+
+            if (parsed == 0 ||
+                parsed >
+                    std::numeric_limits<std::size_t>::max()) {
+                throw std::invalid_argument(
+                    "Invalid importance repeat count"
+                );
+            }
+
+            args.importance_repeats =
+                static_cast<std::size_t>(parsed);
+        } else if (key == "--importance-random-state") {
+            const auto parsed = parse_unsigned(value, key);
+
+            if (parsed >
+                std::numeric_limits<std::uint32_t>::max()) {
+                throw std::invalid_argument(
+                    "Importance seed is out of range"
+                );
+            }
+
+            args.importance_random_state =
+                static_cast<std::uint32_t>(parsed);
+        } else if (key == "--importance-output") {
+            args.importance_output = value;
         } else {
             throw std::invalid_argument(
                 "Unknown argument: " + key
@@ -87,6 +156,14 @@ Arguments parse_arguments(int argc, char** argv) {
         args.predictions_output.empty()) {
         throw std::invalid_argument(
             "Missing required CLI arguments"
+        );
+    }
+
+    if (args.feature_importance &&
+        args.importance_output.empty()) {
+        throw std::invalid_argument(
+            "--importance-output is required with "
+            "--feature-importance"
         );
     }
 
@@ -187,10 +264,12 @@ int main(int argc, char** argv) {
 
         std::cout << "Lab 5 - Final Evaluation\n";
         std::cout << "Task: "
-                  << lab5::task_name(config.model.task) << '\n';
+                  << lab5::task_name(config.model.task)
+                  << '\n';
 
         std::cout << "Scoring: "
-                  << lab5::scoring_name(config.scoring) << '\n';
+                  << lab5::scoring_name(config.scoring)
+                  << '\n';
 
         std::cout << "Train rows: "
                   << train.data.row_count << '\n';
@@ -198,7 +277,7 @@ int main(int argc, char** argv) {
         std::cout << "Test rows: "
                   << test.data.row_count << '\n';
 
-        // The model and preprocessing are fitted only on train.
+        // Fit the model and preprocessing only once.
         const lab5::TrainedEvaluation trained =
             lab5::train_final_model(
                 train.data,
@@ -208,7 +287,6 @@ int main(int argc, char** argv) {
                 config.scoring
             );
 
-        // Reuse the same trained model on train and test.
         const lab5::FinalEvaluation evaluation =
             lab5::evaluate_final_model(
                 trained,
@@ -230,7 +308,7 @@ int main(int argc, char** argv) {
             args.predictions_output
         );
 
-        std::cout << "\nMetric                Train        Test\n";
+        std::cout << "\nMetrics (train / test)\n";
 
         for (const auto& metric : evaluation.metrics) {
             std::cout
@@ -240,24 +318,68 @@ int main(int argc, char** argv) {
         }
 
         std::cout
-            << "\nMetrics: " << args.metrics_output << '\n'
-            << "Predictions: " << args.predictions_output << '\n'
+            << "\nMetrics: " << args.metrics_output
+            << '\n'
+            << "Predictions: " << args.predictions_output
+            << '\n';
+
+        if (args.feature_importance) {
+            std::cout
+                << "\nCalculating permutation "
+                << "feature importance...\n"
+                << "Repeats: "
+                << args.importance_repeats << '\n'
+                << "Random state: "
+                << args.importance_random_state << '\n';
+
+            const auto importance =
+                lab5::permutation_feature_importance(
+                    trained,
+                    test.data,
+                    args.importance_repeats,
+                    args.importance_random_state
+                );
+
+            ensure_parent(args.importance_output);
+
+            lab5::save_feature_importance(
+                importance,
+                args.importance_output
+            );
+
+            std::cout
+                << "Baseline score: "
+                << importance.baseline_score << '\n';
+
+            std::cout << "\nFeature importance:\n";
+
+            for (const auto& feature :
+                 importance.features) {
+                std::cout
+                    << feature.feature_name
+                    << ": mean="
+                    << feature.mean_importance
+                    << ", std="
+                    << feature.stddev
+                    << '\n';
+            }
+
+            std::cout
+                << "\nImportance: "
+                << args.importance_output
+                << '\n';
+        }
+
+        std::cout
             << "Evaluation completed successfully.\n";
 
         return 0;
 
     } catch (const std::exception& error) {
         std::cerr
-            << "Error: " << error.what() << '\n';
+            << "Error: " << error.what()
+            << '\n';
 
         return 1;
     }
 }
-
-
-
-
-
-
-
-

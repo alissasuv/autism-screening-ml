@@ -668,3 +668,39 @@ add_test(
     NAME lab5_evaluation_tests
     COMMAND lab5_evaluation_tests
 )
+
+# Lab 5 - Permutation feature importance
+
+target_sources(csv_reader PRIVATE
+    src/feature_importance.cpp
+)
+
+add_executable(lab5_feature_importance_tests
+    tests/test_lab5_feature_importance.cpp
+)
+
+target_link_libraries(lab5_feature_importance_tests PRIVATE
+    csv_reader
+)
+
+target_compile_options(lab5_feature_importance_tests PRIVATE
+    -Wall
+    -Wextra
+)
+
+if(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lab5_feature_importance_tests PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(lab5_feature_importance_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+
+add_test(
+    NAME lab5_feature_importance_tests
+    COMMAND lab5_feature_importance_tests
+)
